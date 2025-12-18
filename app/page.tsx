@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 
+type MessageRole = "user" | "assistant";
+
 type Message = {
-  role: "user" | "assistant";
+  role: MessageRole;
   content: string;
 };
 
@@ -16,7 +18,11 @@ export default function HomePage() {
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
-    const newMessages = [...messages, { role: "user", content: input }];
+    const newMessages: Message[] = [
+      ...messages,
+      { role: "user", content: input },
+    ];
+
     setMessages(newMessages);
     setInput("");
     setLoading(true);
@@ -36,12 +42,14 @@ export default function HomePage() {
         throw new Error("Server error");
       }
 
-      const data = await res.json();
+      const data: { reply: string } = await res.json();
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.reply },
-      ]);
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: data.reply,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Please try again.");
@@ -82,8 +90,14 @@ export default function HomePage() {
         }}
       >
         <header style={{ marginBottom: "8px" }}>
-          <h1 style={{ fontSize: "24px", fontWeight: 600, marginBottom: "4px" }}>
-            Vent Freely
+          <h1
+            style={{
+              fontSize: "24px",
+              fontWeight: 600,
+              marginBottom: "4px",
+            }}
+          >
+            VENTFREELY
           </h1>
           <p style={{ fontSize: "14px", color: "#cbd5f5" }}>
             Talk to a calm, non-judgmental AI friend. This is a simple demo
@@ -139,7 +153,9 @@ export default function HomePage() {
           ))}
 
           {loading && (
-            <p style={{ fontSize: "13px", color: "#94a3b8" }}>Vent is typing…</p>
+            <p style={{ fontSize: "13px", color: "#94a3b8" }}>
+              VENTFREELY is typing…
+            </p>
           )}
         </section>
 
