@@ -9,14 +9,35 @@ type Message = {
   content: string;
 };
 
+const FREE_LIMIT = 6; // mitu kasutaja sõnumit on tasuta
+
 export default function HomePage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userMessageCount, setUserMessageCount] = useState(0);
+  const [locked, setLocked] = useState(false);
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
+
+    // Kui juba lukus, ära lase enam saata
+    if (locked) {
+      setError(
+        "Your free limit is used. Unlock full access to keep chatting with VENTFREELY."
+      );
+      return;
+    }
+
+    // Kui tasuta limiit täis
+    if (userMessageCount >= FREE_LIMIT) {
+      setLocked(true);
+      setError(
+        "Your free limit (6 messages) is used. Unlock full access to keep chatting with VENTFREELY."
+      );
+      return;
+    }
 
     const newMessages: Message[] = [
       ...messages,
@@ -27,6 +48,7 @@ export default function HomePage() {
     setInput("");
     setLoading(true);
     setError(null);
+    setUserMessageCount((prev) => prev + 1);
 
     try {
       const res = await fetch("/api/chat", {
@@ -61,8 +83,13 @@ export default function HomePage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      sendMessage();
+    sendMessage();
     }
+  };
+
+  const handleUnlockClick = () => {
+    // SIIN PANE HILJEM OMA PÄRIS SHOPIFY LINK
+    window.open("https://your-shopify-store-url.com", "_blank");
   };
 
   return (
@@ -100,8 +127,8 @@ export default function HomePage() {
             VENTFREELY
           </h1>
           <p style={{ fontSize: "14px", color: "#cbd5f5" }}>
-            Talk to a calm, non-judgmental AI friend. This is a simple demo
-            version (no test, no payments yet).
+            Talk to a calm, non-judgmental AI friend. First {FREE_LIMIT}{" "}
+            messages are free. After that you can unlock full access.
           </p>
         </header>
 
@@ -159,50 +186,104 @@ export default function HomePage() {
           )}
         </section>
 
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: "12px",
+            color: "#94a3b8",
+          }}
+        >
+          <span>
+            Free messages used: {userMessageCount} / {FREE_LIMIT}
+          </span>
+          {locked && (
+            <span style={{ color: "#fbbf24" }}>Free limit reached</span>
+          )}
+        </div>
+
         {error && (
           <p style={{ fontSize: "13px", color: "#f97373" }}>{error}</p>
         )}
 
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            marginTop: "4px",
-          }}
-        >
-          <input
-            type="text"
-            placeholder="Type what you want to vent about..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
+        {locked ? (
+          <div
             style={{
-              flexGrow: 1,
-              padding: "10px 12px",
-              borderRadius: "9999px",
-              border: "1px solid #1e293b",
-              background: "#020617",
-              color: "white",
-              fontSize: "14px",
-            }}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={loading}
-            style={{
-              padding: "10px 16px",
-              borderRadius: "9999px",
-              border: "none",
-              cursor: loading ? "not-allowed" : "pointer",
-              background: loading ? "#334155" : "#22c55e",
-              color: "black",
-              fontSize: "14px",
-              fontWeight: 600,
+              marginTop: "4px",
+              padding: "12px",
+              borderRadius: "12px",
+              border: "1px solid #fbbf24",
+              background: "#451a03",
             }}
           >
-            Send
-          </button>
-        </div>
+            <p
+              style={{
+                fontSize: "14px",
+                marginBottom: "8px",
+              }}
+            >
+              You&apos;ve reached your free limit with VENTFREELY. To keep
+              venting as long as you want, unlock full access.
+            </p>
+            <button
+              onClick={handleUnlockClick}
+              style={{
+                padding: "10px 16px",
+                borderRadius: "9999px",
+                border: "none",
+                cursor: "pointer",
+                background: "#fbbf24",
+                color: "black",
+                fontSize: "14px",
+                fontWeight: 600,
+                width: "100%",
+              }}
+            >
+              Unlock full access
+            </button>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              gap: "8px",
+              marginTop: "4px",
+            }}
+          >
+            <input
+              type="text"
+              placeholder="Type what you want to vent about..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              style={{
+                flexGrow: 1,
+                padding: "10px 12px",
+                borderRadius: "9999px",
+                border: "1px solid #1e293b",
+                background: "#020617",
+                color: "white",
+                fontSize: "14px",
+              }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={loading}
+              style={{
+                padding: "10px 16px",
+                borderRadius: "9999px",
+                border: "none",
+                cursor: loading ? "not-allowed" : "pointer",
+                background: loading ? "#334155" : "#22c55e",
+                color: "black",
+                fontSize: "14px",
+                fontWeight: 600,
+              }}
+            >
+              Send
+            </button>
+          </div>
+        )}
       </div>
     </main>
   );
