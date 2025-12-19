@@ -9,7 +9,7 @@ type Message = {
   content: string;
 };
 
-const FREE_LIMIT = 6; // mitu kasutaja sõnumit on tasuta
+const FREE_LIMIT = 6;
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -86,7 +86,6 @@ export default function ChatPage() {
   };
 
   const handleUnlockClick = () => {
-    // PANE SIIA OMA SHOPIFY CHECKOUT LINK
     window.open("https://your-shopify-store-url.com", "_blank");
   };
 
