@@ -43,9 +43,9 @@ export default function HomePage() {
               lineHeight: 1.6,
             }}
           >
-            A safe place to vent when you don&apos;t feel like talking to
-            anyone face to face. No judgment. Just a calm AI friend who
-            listens and supports you.
+            A safe place to vent when you don&apos;t feel like talking to anyone
+            face to face. No judgment. Just a calm AI friend who listens and
+            supports you.
           </p>
         </header>
 

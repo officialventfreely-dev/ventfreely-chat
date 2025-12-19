@@ -11,7 +11,7 @@ type Message = {
 
 const FREE_LIMIT = 6; // mitu kasutaja sõnumit on tasuta
 
-export default function HomePage() {
+export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,7 +22,6 @@ export default function HomePage() {
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
-    // Kui juba lukus, ära lase enam saata
     if (locked) {
       setError(
         "Your free limit is used. Unlock full access to keep chatting with VENTFREELY."
@@ -30,7 +29,6 @@ export default function HomePage() {
       return;
     }
 
-    // Kui tasuta limiit täis
     if (userMessageCount >= FREE_LIMIT) {
       setLocked(true);
       setError(
@@ -83,13 +81,13 @@ export default function HomePage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-    sendMessage();
+      sendMessage();
     }
   };
 
   const handleUnlockClick = () => {
-    // SIIN PANE HILJEM OMA PÄRIS SHOPIFY LINK
-    window.open("https://ventfreely.com/products/ventfreely-unlimited-14-days", "_blank");
+    // PANE SIIA OMA SHOPIFY CHECKOUT LINK
+    window.open("https://your-shopify-store-url.com", "_blank");
   };
 
   return (
@@ -124,7 +122,7 @@ export default function HomePage() {
               marginBottom: "4px",
             }}
           >
-            VENTFREELY
+            VENTFREELY Chat
           </h1>
           <p style={{ fontSize: "14px", color: "#cbd5f5" }}>
             Talk to a calm, non-judgmental AI friend. First {FREE_LIMIT}{" "}
