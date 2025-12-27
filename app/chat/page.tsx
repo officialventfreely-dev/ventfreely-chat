@@ -10,9 +10,9 @@ type Message = {
 
 const FREE_LIMIT = 6;
 
-// TODO: replace this with your real Shopify product URL
+// TODO: replace with your real Shopify product URL
 const SHOPIFY_PRODUCT_URL =
-  "https://ventfreely.com/products/ventfreely-unlimited-14-days";
+  "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
@@ -34,18 +34,14 @@ export default function ChatPage() {
   const usedForBar = Math.min(freeMessagesUsed, FREE_LIMIT);
   const progressPercent = (usedForBar / FREE_LIMIT) * 100;
 
-  // Load from localStorage on first render
+  // Load limits from localStorage
   useEffect(() => {
     try {
       const storedUsed = localStorage.getItem("ventfreely_freeMessagesUsed");
       const storedUnlocked = localStorage.getItem("ventfreely_hasUnlocked");
 
-      if (storedUsed) {
-        setFreeMessagesUsed(Number(storedUsed));
-      }
-      if (storedUnlocked === "true") {
-        setHasUnlocked(true);
-      }
+      if (storedUsed) setFreeMessagesUsed(Number(storedUsed));
+      if (storedUnlocked === "true") setHasUnlocked(true);
     } catch (err) {
       console.error("LocalStorage error:", err);
     } finally {
@@ -53,7 +49,7 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Save to localStorage whenever values change
+  // Save to localStorage when values change
   useEffect(() => {
     if (!isLoaded) return;
     try {
@@ -75,9 +71,7 @@ export default function ChatPage() {
 
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: payloadMessages }),
     });
 
@@ -91,13 +85,11 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     if (!input.trim()) return;
-    if (isLocked) return;
-    if (isLoadingReply) return;
+    if (isLocked || isLoadingReply) return;
 
     setError(null);
 
     const userText = input.trim();
-
     const userMessage: Message = {
       id: Date.now(),
       role: "user",
@@ -112,13 +104,13 @@ export default function ChatPage() {
 
     try {
       const replyText = await sendToBackend(nextMessages);
-
       const replyMessage: Message = {
         id: Date.now() + 1,
         role: "assistant",
-        text: replyText || "I’m here with you. It’s okay to take your time.",
+        text:
+          replyText ||
+          "I’m here with you. It’s okay to take your time and put your feelings into words.",
       };
-
       setMessages((prev) => [...prev, replyMessage]);
     } catch (err) {
       console.error(err);
@@ -144,25 +136,31 @@ export default function ChatPage() {
   };
 
   return (
-    <main className="min-h-screen w-full bg-gradient-to-b from-violet-950 via-slate-950 to-slate-950 text-slate-50">
+    <main className="min-h-screen w-full bg-[#FAF8FF] text-slate-900">
       {/* Header */}
-      <header className="w-full border-b border-violet-700/40 bg-gradient-to-r from-violet-800 via-fuchsia-700 to-violet-900/90 shadow-lg shadow-violet-900/40">
+      <header className="w-full bg-[#401268] text-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-fuchsia-300/20 border border-fuchsia-200/60">
-              <span className="text-xs font-semibold tracking-tight text-fuchsia-50">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+              <span className="text-xs font-semibold tracking-tight">
                 VF
               </span>
             </div>
-            <span className="text-sm font-semibold tracking-tight">
-              Ventfreely
-            </span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold tracking-tight">
+                Ventfreely
+              </span>
+              <span className="text-[11px] text-violet-100/80">
+                Gentle space to vent, not a therapist
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 text-[11px] text-pink-100/90">
-            <span className="hidden sm:inline">Anonymous · 24/7 · Online</span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/60 bg-emerald-400/15 px-2 py-1 text-[11px] text-emerald-100">
-              <span className="text-[9px]">●</span> Listening
+          <div className="flex items-center gap-2 text-[11px] text-violet-100/90">
+            <span className="hidden sm:inline">Anonymous · 24/7</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+              Listening
             </span>
           </div>
         </div>
@@ -170,66 +168,55 @@ export default function ChatPage() {
 
       {/* Content */}
       <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
-        <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)] items-start">
+        <div className="grid gap-8 md:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)] items-start">
           {/* Left: Chat */}
-          <section className="bg-pink-50/5 border border-pink-200/40 backdrop-blur-xl rounded-3xl p-4 md:p-5 shadow-xl shadow-violet-950/50 flex flex-col gap-4">
-            {/* Chat header */}
-            <header className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <h1 className="text-lg md:text-xl font-semibold tracking-tight">
-                  Ventfreely chat
-                </h1>
-                <p className="text-xs md:text-sm text-pink-100/90 max-w-md">
-                  A calm, anonymous space to vent about your thoughts and
-                  feelings. No judgment. No pressure. Just a supportive AI
-                  friend.
-                </p>
-              </div>
-
-              <div className="hidden md:flex flex-col items-end gap-1 text-[11px] text-pink-100/90">
-                <span className="px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-100 border border-emerald-300/60">
-                  ● Online & listening
-                </span>
-                <span className="px-2 py-1 rounded-full bg-pink-50/10 text-pink-100 border border-pink-200/60">
-                  Anonymous · 24/7 · Safe
-                </span>
-              </div>
+          <section className="space-y-4">
+            {/* Text intro */}
+            <header className="space-y-1 border-b border-violet-200/40 pb-3">
+              <h1 className="text-base md:text-lg font-semibold tracking-tight text-[#2A1740]">
+                Ventfreely chat
+              </h1>
+              <p className="text-xs md:text-sm text-slate-700 max-w-md">
+                A calm, anonymous space to say the things that feel heavy in
+                your head. No judgment. No pressure. Just a supportive AI
+                friend listening to you.
+              </p>
             </header>
 
             {/* Free messages info */}
-            <div className="rounded-2xl bg-pink-50/10 border border-pink-200/50 px-3 py-3 flex flex-col gap-2 text-xs">
+            <div className="space-y-2 text-[11px]">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-pink-50">
+                <span className="text-slate-700">
                   {hasUnlocked ? (
-                    <span>
-                      You currently have <strong>full access</strong> unlocked.
-                      ✨
-                    </span>
+                    <>
+                      You currently have{" "}
+                      <strong className="font-semibold">full access</strong>.
+                    </>
                   ) : remaining > 0 ? (
-                    <span>
+                    <>
                       You have{" "}
-                      <strong>
+                      <strong className="font-semibold">
                         {remaining} free message{remaining === 1 ? "" : "s"}
                       </strong>{" "}
                       left.
-                    </span>
+                    </>
                   ) : (
-                    <span className="text-amber-200">
+                    <span className="text-amber-800">
                       Your free messages are used up. Unlock to keep talking.
                     </span>
                   )}
                 </span>
                 {!hasUnlocked && (
-                  <span className="text-[11px] text-pink-100/80">
+                  <span className="text-[10px] text-slate-500">
                     Limit: {FREE_LIMIT} messages
                   </span>
                 )}
               </div>
 
               {!hasUnlocked && (
-                <div className="h-1.5 w-full rounded-full bg-pink-50/15 overflow-hidden">
+                <div className="h-1.5 w-full rounded-full bg-white/60 overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-fuchsia-400 via-pink-300 to-rose-300 transition-all"
+                    className="h-full rounded-full bg-gradient-to-r from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4] transition-all"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
@@ -237,9 +224,9 @@ export default function ChatPage() {
             </div>
 
             {/* Messages area */}
-            <div className="flex flex-col gap-2 rounded-2xl bg-slate-950/80 border border-violet-900/70 max-h-[420px] min-h-[260px] overflow-y-auto p-3">
+            <div className="flex flex-col gap-2 max-h-[420px] min-h-[260px] overflow-y-auto py-3 border-y border-violet-200/50">
               <div className="flex justify-center my-1">
-                <span className="px-3 py-1 rounded-full bg-violet-900/70 border border-violet-600/60 text-[10px] text-pink-100/80">
+                <span className="px-3 py-1 rounded-full bg-white/70 text-[10px] text-slate-600">
                   Today
                 </span>
               </div>
@@ -252,10 +239,10 @@ export default function ChatPage() {
                   }`}
                 >
                   <div
-                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed shadow-sm ${
+                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed ${
                       m.role === "user"
-                        ? "bg-pink-300 text-violet-950 rounded-br-sm shadow-pink-500/40"
-                        : "bg-violet-900/70 text-pink-50 rounded-bl-sm border border-violet-400/50"
+                        ? "bg-[#401268] text-white rounded-br-[1.6rem]"
+                        : "bg-white/80 text-slate-900 rounded-bl-[1.6rem]"
                     }`}
                   >
                     {m.text}
@@ -265,8 +252,12 @@ export default function ChatPage() {
 
               {isLoadingReply && (
                 <div className="flex justify-start">
-                  <div className="max-w-[70%] px-3 py-2 rounded-2xl rounded-bl-sm bg-violet-900/70 text-pink-100 border border-violet-400/50 text-xs flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-emerald-300 animate-pulse" />
+                  <div className="max-w-[70%] px-3 py-2 rounded-2xl rounded-bl-[1.6rem] bg-white/80 text-slate-700 text-xs flex items-center gap-2">
+                    <span className="flex gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#401268] animate-pulse" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#A268F5] animate-pulse [animation-delay:120ms]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#F5A5E0] animate-pulse [animation-delay:240ms]" />
+                    </span>
                     <span>Ventfreely is thinking about how to respond…</span>
                   </div>
                 </div>
@@ -275,46 +266,44 @@ export default function ChatPage() {
 
             {/* Error */}
             {error && (
-              <div className="mt-1 rounded-2xl border border-amber-300/70 bg-amber-900/40 px-3 py-2 text-[11px] text-amber-100">
+              <div className="text-[11px] text-amber-800 bg-amber-50/80 border border-amber-100 rounded-full px-3 py-2">
                 {error}
               </div>
             )}
 
             {/* Lock notice */}
             {isLocked && !hasUnlocked && (
-              <div className="mt-1 p-3 rounded-2xl bg-pink-50/10 border border-pink-200/60 text-xs flex flex-col gap-2">
-                <p className="text-pink-50">
+              <div className="space-y-2 text-[11px] border-t border-violet-200/40 pt-3">
+                <p className="text-slate-700">
                   You&apos;ve used all <strong>{FREE_LIMIT}</strong> free
-                  messages. To keep talking without limits for{" "}
-                  <strong>14 days</strong>, you can unlock full access for{" "}
-                  <strong>€2.99</strong>.
+                  messages. To keep talking without limits for 14 days, you can
+                  unlock full access for <strong>€2.99</strong>.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={handleUnlockClick}
-                    className="px-4 py-2 rounded-xl bg-pink-200 text-violet-950 text-xs font-semibold shadow shadow-pink-500/50 hover:bg-pink-100 active:scale-[0.98] transition"
+                    className="px-4 py-2 rounded-full bg-[#401268] text-white text-xs font-semibold shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition"
                   >
                     Unlock full access · €2.99
                   </button>
                   <button
                     onClick={handleAlreadyUnlocked}
-                    className="px-3 py-2 rounded-xl border border-pink-200/70 text-pink-50 text-xs hover:bg-pink-50/15 transition"
+                    className="px-3 py-2 rounded-full border border-[#401268]/25 text-xs text-[#401268] bg-white/60 hover:bg-white transition"
                   >
-                    I already purchased access
+                    I already have access
                   </button>
                 </div>
-                <p className="text-[10px] text-pink-100/85">
-                  MVP version: this button manually marks you as unlocked on
-                  this device. Later we’ll connect this to Shopify so it happens
-                  automatically after payment.
+                <p className="text-[10px] text-slate-500">
+                  MVP version: this unlocks access on this device only. Later
+                  we’ll connect it directly to your payment.
                 </p>
               </div>
             )}
 
-            {/* Input area */}
-            <div className="flex gap-2 pt-1">
+            {/* Input */}
+            <div className="flex gap-2 pt-2">
               <input
-                className="flex-1 rounded-2xl bg-slate-950/90 border border-violet-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-pink-400/80 focus:border-pink-300/80 disabled:opacity-50"
+                className="flex-1 rounded-full bg-white/80 border border-violet-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5] disabled:opacity-50"
                 placeholder={
                   isLocked && !hasUnlocked
                     ? "Free messages are used up. Unlock access to keep talking."
@@ -327,7 +316,7 @@ export default function ChatPage() {
               />
               <button
                 onClick={handleSend}
-                className="px-4 py-2 rounded-2xl text-sm font-medium bg-pink-300 text-violet-950 hover:bg-pink-200 active:bg-pink-400 transition disabled:opacity-50 disabled:cursor-not-allowed shadow shadow-pink-500/50"
+                className="px-4 py-2 rounded-full text-sm font-medium bg-[#401268] text-white hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={!input.trim() || (isLocked && !hasUnlocked)}
               >
                 Send
@@ -335,39 +324,39 @@ export default function ChatPage() {
             </div>
           </section>
 
-          {/* Right: info / safety card */}
-          <aside className="space-y-4">
-            <div className="bg-pink-50/8 border border-pink-200/50 rounded-3xl p-4 md:p-5 backdrop-blur-xl shadow-xl shadow-violet-950/50 text-sm">
-              <h2 className="text-sm md:text-base font-semibold mb-2 text-pink-50">
-                What is Ventfreely?
+          {/* Right: info / safety */}
+          <aside className="space-y-4 text-xs md:text-sm text-slate-700">
+            <section className="space-y-2 border-b border-violet-200/40 pb-4 md:pb-5">
+              <h2 className="text-sm font-semibold text-[#2A1740]">
+                What Ventfreely is (and isn&apos;t)
               </h2>
-              <p className="text-xs md:text-sm text-pink-100/90 mb-3">
-                Ventfreely is a mental-health style chat where you can talk
-                about anything that’s on your mind. It&apos;s not a therapist or
-                a doctor – but it is here to listen, reflect, and support you.
-              </p>
-              <ul className="space-y-1.5 text-xs text-pink-50/90">
-                <li>• Anonymous by default – no real name needed.</li>
-                <li>• Gentle, non-judgmental responses.</li>
-                <li>• Short free trial, then affordable access.</li>
-              </ul>
-            </div>
-
-            <div className="bg-pink-50/6 border border-pink-200/50 rounded-3xl p-4 backdrop-blur-xl text-[11px] text-pink-100/90 space-y-2">
-              <h3 className="text-xs font-semibold text-pink-50">
-                Important note
-              </h3>
               <p>
-                Ventfreely is an AI chat, not a human or a licensed
-                professional. It can be comforting and helpful, but it cannot
+                Ventfreely is a gentle AI chat where you can talk about
+                stressful thoughts, feelings, and everyday mental load. It&apos;s
+                designed to feel like a calm friend, not a lecture.
+              </p>
+              <ul className="space-y-1 list-disc pl-4 text-xs text-slate-700">
+                <li>Anonymous by default – you don&apos;t need your real name.</li>
+                <li>Validates your feelings instead of judging them.</li>
+                <li>Short free trial, then affordable access if it helps you.</li>
+              </ul>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-xs font-semibold text-[#2A1740]">
+                Important safety note
+              </h3>
+              <p className="text-xs md:text-sm">
+                Ventfreely is an AI companion, not a human and not a licensed
+                professional. It can be comforting and reflective, but it cannot
                 handle emergencies or replace real mental health care.
               </p>
-              <p>
+              <p className="text-xs md:text-sm">
                 If you ever feel like you might hurt yourself or someone else,
-                or you’re in immediate danger, please contact local emergency
-                services or a trusted person right away.
+                or you&apos;re in immediate danger, please contact local
+                emergency services or someone you trust right away.
               </p>
-            </div>
+            </section>
           </aside>
         </div>
       </div>

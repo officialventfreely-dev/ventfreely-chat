@@ -7,11 +7,11 @@ import Link from "next/link";
 type Answer = 1 | 2 | 3 | 4 | 5;
 
 const QUESTIONS = [
-  "My thoughts feel overwhelming or hard to control.",
-  "I feel emotionally drained or exhausted.",
+  "My thoughts feel overwhelming or hard to switch off.",
+  "I feel emotionally drained or exhausted most days.",
   "I find it hard to talk to people around me about how I feel.",
-  "I feel anxious, stressed, or on edge most of the time.",
-  "I feel like I’m carrying everything alone.",
+  "I feel anxious, stressed, or on edge a lot of the time.",
+  "I feel like I’m carrying too much on my own.",
 ];
 
 export default function TestPage() {
@@ -47,52 +47,55 @@ export default function TestPage() {
   if (percent <= 33) {
     summaryTitle = "You might be a bit stressed, but still managing.";
     summaryText =
-      "Your answers suggest that things are not completely overwhelming right now, but there are still some feelings worth talking about. Chatting with Ventfreely can help you process them before they build up.";
+      "Your answers suggest that things are not completely overwhelming right now, but there are still feelings worth paying attention to. Venting can help you stay ahead of the stress instead of letting it quietly pile up.";
   } else if (percent <= 66) {
     summaryTitle = "You’re carrying quite a lot emotionally.";
     summaryText =
-      "You’re dealing with a noticeable amount of stress and emotional weight. You don’t have to hold all of this in your head alone. Ventfreely can be a safe place to unpack it slowly, at your own pace.";
+      "There’s a noticeable emotional weight here. You don’t have to hold all of this alone in your head. Having a calm space to talk through it – even with an AI – can help you feel less overloaded.";
   } else {
     summaryTitle = "You might be under intense emotional pressure right now.";
     summaryText =
-      "Your answers suggest that things may feel heavy and overwhelming. You deserve support and a place to put all of these thoughts. Ventfreely can be a calm space to start letting it out, one message at a time.";
+      "Things may feel very heavy and exhausting, and that matters. You deserve support and a place to pour out everything you’ve been holding. Ventfreely can be one soft, low-pressure place to start doing that.";
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-violet-950 via-slate-950 to-slate-950 text-slate-50">
-      {/* Header (same vibe as homepage) */}
-      <header className="w-full border-b border-violet-700/40 bg-gradient-to-r from-violet-800 via-fuchsia-700 to-violet-900/90 shadow-lg shadow-violet-900/40">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3 md:px-6">
+    <main className="min-h-screen w-full bg-[#FAF8FF] text-slate-900">
+      {/* Header */}
+      <header className="w-full bg-[#401268] text-white">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-fuchsia-300/20 border border-fuchsia-200/60">
-              <span className="text-xs font-semibold tracking-tight text-fuchsia-50">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+              <span className="text-xs font-semibold tracking-tight">
                 VF
               </span>
             </div>
-            <span className="text-sm font-semibold tracking-tight">
-              Ventfreely
-            </span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold tracking-tight">
+                Ventfreely
+              </span>
+              <span className="text-[11px] text-violet-100/80">
+                Quick emotional check-in
+              </span>
+            </div>
           </Link>
-
-          <span className="text-[11px] text-pink-100/90">
-            Quick emotional check-in
+          <span className="text-[11px] text-violet-100/90">
+            Takes about 1–2 minutes
           </span>
         </div>
       </header>
 
       {/* Content */}
-      <div className="mx-auto flex min-h-[calc(100vh-56px)] max-w-4xl flex-col px-4 py-8 md:px-6 md:py-10">
-        <section className="mx-auto w-full max-w-2xl rounded-3xl border border-pink-200/40 bg-pink-50/5 p-5 shadow-xl shadow-violet-950/60 backdrop-blur-xl">
-          {/* Instructions */}
-          <div className="mb-5 space-y-2">
-            <h1 className="text-lg font-semibold tracking-tight md:text-xl">
-              Before you start chatting, let&apos;s check in with you.
+      <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-10">
+        <section className="max-w-xl mx-auto space-y-6">
+          {/* Intro */}
+          <div className="space-y-2 border-b border-violet-200/40 pb-4">
+            <h1 className="text-base md:text-lg font-semibold tracking-tight text-[#2A1740]">
+              Before you start chatting, let&apos;s check in with how you are.
             </h1>
-            <p className="text-sm text-pink-100/95">
-              Please rate each statement on a scale from{" "}
-              <strong>1 to 5</strong>:
+            <p className="text-xs md:text-sm text-slate-700">
+              For each statement, choose a number from <strong>1 to 5</strong>:
             </p>
-            <ul className="list-disc pl-5 text-xs text-pink-100/90">
+            <ul className="list-disc pl-4 text-[11px] text-slate-700 space-y-0.5">
               <li>
                 <strong>1</strong> = Not at all true for me.
               </li>
@@ -103,26 +106,26 @@ export default function TestPage() {
                 <strong>5</strong> = Absolutely true for me.
               </li>
             </ul>
-            <p className="text-[11px] text-pink-100/80">
+            <p className="text-[11px] text-slate-500">
               There are no right or wrong answers. Just choose what feels most
               honest for you right now.
             </p>
           </div>
 
-          {/* Questions form */}
+          {/* Questions */}
           <form onSubmit={handleSubmit} className="space-y-5">
             {QUESTIONS.map((q, index) => (
               <div
                 key={index}
-                className="rounded-2xl border border-pink-200/40 bg-pink-50/10 p-3"
+                className="space-y-2 border-b border-violet-100/50 pb-4 last:border-b-0"
               >
-                <p className="mb-2 text-sm text-pink-50/95">
-                  <span className="mr-1 text-xs text-pink-200/90">
+                <p className="text-xs md:text-sm text-slate-800">
+                  <span className="mr-1 text-[11px] text-[#401268] font-semibold">
                     Q{index + 1}.
                   </span>
                   {q}
                 </p>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
+                <div className="flex items-center gap-2">
                   {[1, 2, 3, 4, 5].map((value) => {
                     const selected = answers[index] === value;
                     return (
@@ -130,17 +133,17 @@ export default function TestPage() {
                         key={value}
                         type="button"
                         onClick={() => handleSelect(index, value as Answer)}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium transition ${
+                        className={`flex h-9 w-9 items-center justify-center rounded-full border text-xs font-medium transition ${
                           selected
-                            ? "bg-pink-300 text-violet-950 border-pink-100 shadow shadow-pink-500/50"
-                            : "bg-pink-50/5 text-pink-50 border-pink-200/60 hover:bg-pink-50/20"
+                            ? "bg-[#401268] text-white border-[#401268]"
+                            : "bg-transparent text-slate-700 border-violet-200 hover:bg-white/60"
                         }`}
                       >
                         {value}
                       </button>
                     );
                   })}
-                  <span className="ml-1 text-[11px] text-pink-100/80">
+                  <span className="ml-1 text-[11px] text-slate-500">
                     1 = not at all · 5 = absolutely
                   </span>
                 </div>
@@ -148,42 +151,43 @@ export default function TestPage() {
             ))}
 
             {!allAnswered && (
-              <p className="text-[11px] text-amber-200/90">
+              <p className="text-[11px] text-amber-800 bg-amber-50/80 border border-amber-100 rounded-full px-3 py-2">
                 Please answer all questions before continuing.
               </p>
             )}
 
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            {/* Actions */}
+            <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
               <button
                 type="submit"
                 disabled={!allAnswered}
-                className="inline-flex items-center justify-center rounded-xl bg-pink-200 px-4 py-2 text-sm font-semibold text-violet-900 shadow shadow-pink-400/40 hover:bg-pink-100 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed"
+                className="inline-flex w-full items-center justify-center rounded-full bg-[#401268] px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed sm:flex-1"
               >
                 See my result
               </button>
               <Link
                 href="/chat"
-                className="inline-flex items-center justify-center rounded-xl border border-pink-200/60 bg-pink-50/10 px-4 py-2 text-xs font-medium text-pink-100 hover:bg-pink-50/20 transition"
+                className="inline-flex w-full items-center justify-center rounded-full border border-[#401268]/20 bg-white/60 px-4 py-3 text-xs font-medium text-[#401268] hover:bg-white transition sm:flex-1"
               >
-                Skip test – start chatting
+                Skip test – go to chat
               </Link>
             </div>
           </form>
 
           {/* Result */}
           {submitted && (
-            <div className="mt-6 rounded-2xl border border-pink-200/50 bg-pink-50/15 p-4 text-sm text-pink-50/95">
-              <p className="text-xs text-pink-200/90 mb-1">
-                Your score: {score} / {maxScore} ({percent}%)
+            <div className="pt-4 mt-2 border-t border-violet-200/50 space-y-3 text-xs md:text-sm text-slate-700">
+              <p className="text-[11px] text-slate-500">
+                Your score: <strong>{score}</strong> / {maxScore} ({percent}
+                %)
               </p>
-              <p className="mb-2 font-semibold">{summaryTitle}</p>
-              <p className="mb-3 text-xs text-pink-100/85">{summaryText}</p>
-
+              <p className="font-semibold text-[#2A1740]">{summaryTitle}</p>
+              <p>{summaryText}</p>
               <Link
                 href="/chat"
-                className="inline-flex items-center justify-center rounded-xl bg-pink-200 px-4 py-2 text-xs font-semibold text-violet-900 shadow shadow-pink-400/40 hover:bg-pink-100 active:scale-[0.98] transition"
+                className="inline-flex items-center justify-center rounded-full bg-[#401268] px-4 py-2.5 text-xs font-semibold text-white shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition"
               >
-                Go to chat
+                Continue to chat
               </Link>
             </div>
           )}
