@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
 type Message = {
   id: number;
@@ -15,6 +17,8 @@ const SHOPIFY_PRODUCT_URL =
   "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
 
 export default function ChatPage() {
+  const router = useRouter();
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
@@ -24,17 +28,31 @@ export default function ChatPage() {
   ]);
   const [input, setInput] = useState("");
   const [freeMessagesUsed, setFreeMessagesUsed] = useState(0);
+
+  // Local “I already have access” flag (old MVP behavior)
   const [hasUnlocked, setHasUnlocked] = useState(false);
+
+  // New: real subscription flag from Supabase
+  const [isSubscribed, setIsSubscribed] = useState(false);
+
+  // LocalStorage loaded
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // New: we are checking auth + subscription
+  const [checkingAccess, setCheckingAccess] = useState(true);
+
   const [isLoadingReply, setIsLoadingReply] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isLocked = !hasUnlocked && freeMessagesUsed >= FREE_LIMIT;
+  // PRO: final “unlocked” state = real sub OR local unlock
+  const effectiveUnlocked = isSubscribed || hasUnlocked;
+
+  const isLocked = !effectiveUnlocked && freeMessagesUsed >= FREE_LIMIT;
   const remaining = Math.max(FREE_LIMIT - freeMessagesUsed, 0);
   const usedForBar = Math.min(freeMessagesUsed, FREE_LIMIT);
   const progressPercent = (usedForBar / FREE_LIMIT) * 100;
 
-  // Load limits from localStorage
+  // 1) Load old MVP flags from localStorage (freeMessagesUsed + hasUnlocked)
   useEffect(() => {
     try {
       const storedUsed = localStorage.getItem("ventfreely_freeMessagesUsed");
@@ -49,7 +67,7 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Save to localStorage when values change
+  // 2) Save to localStorage when values change (keeps old MVP behavior working)
   useEffect(() => {
     if (!isLoaded) return;
     try {
@@ -62,6 +80,48 @@ export default function ChatPage() {
       console.error("LocalStorage error:", err);
     }
   }, [freeMessagesUsed, hasUnlocked, isLoaded]);
+
+  // 3) NEW: Check Supabase auth + subscriptions (pro unlock)
+  useEffect(() => {
+    async function checkSubscription() {
+      try {
+        // Check if user is logged in
+        const {
+          data: { session },
+        } = await supabaseBrowser.auth.getSession();
+
+        if (!session || !session.user) {
+          // No session → send to login page
+          router.push("/login");
+          return;
+        }
+
+        const userId = session.user.id;
+        const nowIso = new Date().toISOString();
+
+        // Check subscriptions table for an active, non-expired subscription
+        const { data, error } = await supabaseBrowser
+          .from("subscriptions")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("status", "active")
+          .gt("current_period_end", nowIso)
+          .maybeSingle();
+
+        if (!error && data) {
+          setIsSubscribed(true); // User has real active subscription
+        } else {
+          setIsSubscribed(false);
+        }
+      } catch (err) {
+        console.error("Error checking subscription:", err);
+      } finally {
+        setCheckingAccess(false);
+      }
+    }
+
+    checkSubscription();
+  }, [router]);
 
   const sendToBackend = async (conversation: Message[]) => {
     const payloadMessages = conversation.map((m) => ({
@@ -135,6 +195,17 @@ export default function ChatPage() {
     setHasUnlocked(true);
   };
 
+  // While we’re checking Supabase auth + subscription, show a simple loader
+  if (checkingAccess) {
+    return (
+      <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center">
+        <div className="rounded-2xl bg-white px-6 py-4 shadow-lg border border-purple-100 text-sm text-gray-600">
+          Checking your access...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen w-full bg-[#FAF8FF] text-slate-900">
       {/* Header */}
@@ -183,11 +254,11 @@ export default function ChatPage() {
               </p>
             </header>
 
-            {/* Free messages info */}
+            {/* Free messages / access info */}
             <div className="space-y-2 text-[11px]">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-700">
-                  {hasUnlocked ? (
+                  {effectiveUnlocked ? (
                     <>
                       You currently have{" "}
                       <strong className="font-semibold">full access</strong>.
@@ -206,14 +277,14 @@ export default function ChatPage() {
                     </span>
                   )}
                 </span>
-                {!hasUnlocked && (
+                {!effectiveUnlocked && (
                   <span className="text-[10px] text-slate-500">
                     Limit: {FREE_LIMIT} messages
                   </span>
                 )}
               </div>
 
-              {!hasUnlocked && (
+              {!effectiveUnlocked && (
                 <div className="h-1.5 w-full rounded-full bg-white/60 overflow-hidden">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4] transition-all"
@@ -272,7 +343,7 @@ export default function ChatPage() {
             )}
 
             {/* Lock notice */}
-            {isLocked && !hasUnlocked && (
+            {isLocked && !effectiveUnlocked && (
               <div className="space-y-2 text-[11px] border-t border-violet-200/40 pt-3">
                 <p className="text-slate-700">
                   You&apos;ve used all <strong>{FREE_LIMIT}</strong> free
@@ -294,8 +365,9 @@ export default function ChatPage() {
                   </button>
                 </div>
                 <p className="text-[10px] text-slate-500">
-                  MVP version: this unlocks access on this device only. Later
-                  we’ll connect it directly to your payment.
+                  Right now this button still unlocks on this device only. Once
+                  the Shopify integration is fully wired, your access will be
+                  unlocked automatically after payment on your account.
                 </p>
               </div>
             )}
@@ -305,19 +377,19 @@ export default function ChatPage() {
               <input
                 className="flex-1 rounded-full bg-white/80 border border-violet-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5] disabled:opacity-50"
                 placeholder={
-                  isLocked && !hasUnlocked
+                  isLocked && !effectiveUnlocked
                     ? "Free messages are used up. Unlock access to keep talking."
                     : "Type whatever you’re thinking right now…"
                 }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={isLocked && !hasUnlocked}
+                disabled={isLocked && !effectiveUnlocked}
               />
               <button
                 onClick={handleSend}
                 className="px-4 py-2 rounded-full text-sm font-medium bg-[#401268] text-white hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!input.trim() || (isLocked && !hasUnlocked)}
+                disabled={!input.trim() || (isLocked && !effectiveUnlocked)}
               >
                 Send
               </button>
