@@ -44,6 +44,12 @@ export default function ChatPage() {
   const isLoggedIn = !!userEmail;
   const isLocked = !isLoggedIn && secondsLeft <= 0;
 
+  // Timeline progress (0 → 100%)
+  const totalSeconds = FREE_SECONDS;
+  const usedSeconds = Math.min(totalSeconds - secondsLeft, totalSeconds);
+  const progressPercent =
+    totalSeconds > 0 ? (usedSeconds / totalSeconds) * 100 : 0;
+
   // Format timer mm:ss
   const formattedTime = `${Math.floor(secondsLeft / 60)
     .toString()
@@ -154,7 +160,6 @@ export default function ChatPage() {
 
   const handleUnlockClick = () => {
     // Here you send user to Shopify checkout.
-    // In Shopify settings, you explain in emails that they’ll get a signup link.
     window.location.href = SHOPIFY_CHECKOUT_URL;
   };
 
@@ -285,6 +290,20 @@ export default function ChatPage() {
           </div>
         </div>
       </header>
+
+      {/* YouTube-style top progress bar for guest timer */}
+      {!isLoggedIn && (
+        <div className="w-full bg-[#FAF8FF]">
+          <div className="mx-auto max-w-5xl px-4 md:px-6 pt-2">
+            <div className="h-1.5 w-full rounded-full bg-white/70 overflow-hidden shadow-[0_0_0_1px_rgba(148,163,184,0.25)]">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4] transition-all duration-300"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 🔔 Floating info overlay after 2 min (only for guests) */}
       {isLocked && !isLoggedIn && (
