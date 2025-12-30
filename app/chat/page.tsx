@@ -10,15 +10,16 @@ type Message = {
   text: string;
 };
 
-const FREE_LIMIT = 6;
+const FREE_SECONDS = 120; // 2 minutes
 
-// TODO: replace with your real Shopify product URL
-const SHOPIFY_PRODUCT_URL =
+// Shopify checkout URL (set this to your real checkout link)
+const SHOPIFY_CHECKOUT_URL =
   "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
 
 export default function ChatPage() {
   const router = useRouter();
 
+  // Chat state
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
@@ -27,102 +28,67 @@ export default function ChatPage() {
     },
   ]);
   const [input, setInput] = useState("");
-  const [freeMessagesUsed, setFreeMessagesUsed] = useState(0);
-
-  // Local “I already have access” flag (old MVP behavior)
-  const [hasUnlocked, setHasUnlocked] = useState(false);
-
-  // New: real subscription flag from Supabase
-  const [isSubscribed, setIsSubscribed] = useState(false);
-
-  // LocalStorage loaded
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // New: we are checking auth + subscription
-  const [checkingAccess, setCheckingAccess] = useState(true);
-
   const [isLoadingReply, setIsLoadingReply] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // PRO: final “unlocked” state = real sub OR local unlock
-  const effectiveUnlocked = isSubscribed || hasUnlocked;
+  // Auth state (just track email to know if logged in)
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
 
-  const isLocked = !effectiveUnlocked && freeMessagesUsed >= FREE_LIMIT;
-  const remaining = Math.max(FREE_LIMIT - freeMessagesUsed, 0);
-  const usedForBar = Math.min(freeMessagesUsed, FREE_LIMIT);
-  const progressPercent = (usedForBar / FREE_LIMIT) * 100;
+  // Timer for anonymous users
+  const [secondsLeft, setSecondsLeft] = useState(FREE_SECONDS);
 
-  // 1) Load old MVP flags from localStorage (freeMessagesUsed + hasUnlocked)
+  // UI: account dropdown menu
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+
+  const isLoggedIn = !!userEmail;
+  const isLocked = !isLoggedIn && secondsLeft <= 0;
+
+  // Format timer mm:ss
+  const formattedTime = `${Math.floor(secondsLeft / 60)
+    .toString()
+    .padStart(1, "0")}:${(secondsLeft % 60).toString().padStart(2, "0")}`;
+
+  // 1) Check Supabase session on mount
   useEffect(() => {
-    try {
-      const storedUsed = localStorage.getItem("ventfreely_freeMessagesUsed");
-      const storedUnlocked = localStorage.getItem("ventfreely_hasUnlocked");
-
-      if (storedUsed) setFreeMessagesUsed(Number(storedUsed));
-      if (storedUnlocked === "true") setHasUnlocked(true);
-    } catch (err) {
-      console.error("LocalStorage error:", err);
-    } finally {
-      setIsLoaded(true);
-    }
-  }, []);
-
-  // 2) Save to localStorage when values change (keeps old MVP behavior working)
-  useEffect(() => {
-    if (!isLoaded) return;
-    try {
-      localStorage.setItem(
-        "ventfreely_freeMessagesUsed",
-        String(freeMessagesUsed)
-      );
-      localStorage.setItem("ventfreely_hasUnlocked", String(hasUnlocked));
-    } catch (err) {
-      console.error("LocalStorage error:", err);
-    }
-  }, [freeMessagesUsed, hasUnlocked, isLoaded]);
-
-  // 3) NEW: Check Supabase auth + subscriptions (pro unlock)
-  useEffect(() => {
-    async function checkSubscription() {
+    async function loadSession() {
       try {
-        // Check if user is logged in
         const {
           data: { session },
         } = await supabaseBrowser.auth.getSession();
-
-        if (!session || !session.user) {
-          // No session → send to login page
-          router.push("/login");
-          return;
-        }
-
-        const userId = session.user.id;
-        const nowIso = new Date().toISOString();
-
-        // Check subscriptions table for an active, non-expired subscription
-        const { data, error } = await supabaseBrowser
-          .from("subscriptions")
-          .select("*")
-          .eq("user_id", userId)
-          .eq("status", "active")
-          .gt("current_period_end", nowIso)
-          .maybeSingle();
-
-        if (!error && data) {
-          setIsSubscribed(true); // User has real active subscription
-        } else {
-          setIsSubscribed(false);
-        }
+        setUserEmail(session?.user?.email ?? null);
       } catch (err) {
-        console.error("Error checking subscription:", err);
+        console.error("Error checking session:", err);
       } finally {
-        setCheckingAccess(false);
+        setCheckingSession(false);
       }
     }
 
-    checkSubscription();
-  }, [router]);
+    loadSession();
+  }, []);
 
+  // 2) Start 2-minute timer ONLY if user is NOT logged in
+  useEffect(() => {
+    if (checkingSession) return; // wait until we know login status
+    if (isLoggedIn) return; // logged-in users have no timer/paywall
+
+    setSecondsLeft(FREE_SECONDS);
+    const start = Date.now();
+
+    const id = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - start) / 1000);
+      const remaining = Math.max(FREE_SECONDS - elapsed, 0);
+      setSecondsLeft(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(id);
+      }
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [checkingSession, isLoggedIn]);
+
+  // 3) Send messages to your /api/chat backend
   const sendToBackend = async (conversation: Message[]) => {
     const payloadMessages = conversation.map((m) => ({
       role: m.role === "user" ? "user" : "assistant",
@@ -159,7 +125,6 @@ export default function ChatPage() {
     const nextMessages = [...messages, userMessage];
     setMessages(nextMessages);
     setInput("");
-    setFreeMessagesUsed((prev) => prev + 1);
     setIsLoadingReply(true);
 
     try {
@@ -180,7 +145,7 @@ export default function ChatPage() {
     }
   };
 
-  const handleKeyDown = (e: any) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -188,19 +153,35 @@ export default function ChatPage() {
   };
 
   const handleUnlockClick = () => {
-    window.location.href = SHOPIFY_PRODUCT_URL;
+    // Here you send user to Shopify checkout.
+    // In Shopify settings, configure SUCCESS redirect → https://yourdomain/signup
+    window.location.href = SHOPIFY_CHECKOUT_URL;
   };
 
-  const handleAlreadyUnlocked = () => {
-    setHasUnlocked(true);
+  const handleLoginClick = () => {
+    router.push("/login");
   };
 
-  // While we’re checking Supabase auth + subscription, show a simple loader
-  if (checkingAccess) {
+  const handleSignupClick = () => {
+    router.push("/signup");
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabaseBrowser.auth.signOut();
+      setUserEmail(null);
+      setSecondsLeft(FREE_SECONDS); // start timer again for anonymous
+      router.push("/");
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
+
+  if (checkingSession) {
     return (
       <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center">
         <div className="rounded-2xl bg-white px-6 py-4 shadow-lg border border-purple-100 text-sm text-gray-600">
-          Checking your access...
+          Checking your account...
         </div>
       </main>
     );
@@ -211,6 +192,7 @@ export default function ChatPage() {
       {/* Header */}
       <header className="w-full bg-[#401268] text-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
+          {/* Left: logo + tagline */}
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
               <span className="text-xs font-semibold tracking-tight">
@@ -227,12 +209,73 @@ export default function ChatPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-[11px] text-violet-100/90">
-            <span className="hidden sm:inline">Anonymous · 24/7</span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-              Listening
-            </span>
+          {/* Right: timer (for guests) + account menu */}
+          <div className="flex items-center gap-3">
+            {/* Timer for guests */}
+            {!isLoggedIn && (
+              <div className="hidden sm:flex items-center gap-1 text-[11px] text-violet-100/90">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                  <span>{secondsLeft > 0 ? `Free time: ${formattedTime}` : "Free time ended"}</span>
+                </span>
+              </div>
+            )}
+
+            {/* Account dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setAccountMenuOpen((prev) => !prev)}
+                className="flex items-center gap-2 rounded-full bg-white/10 px-2 py-1 text-[11px] hover:bg-white/15 transition"
+              >
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
+                  <span className="text-xs font-semibold">
+                    {isLoggedIn ? (userEmail?.charAt(0).toUpperCase() ?? "U") : "A"}
+                  </span>
+                </div>
+                <span className="hidden sm:inline text-violet-100/90">
+                  {isLoggedIn ? userEmail : "Account"}
+                </span>
+              </button>
+
+              {accountMenuOpen && (
+                <div className="absolute right-0 mt-2 w-40 rounded-xl bg-white text-[12px] text-slate-800 shadow-lg border border-violet-100 z-20">
+                  {!isLoggedIn ? (
+                    <div className="py-1">
+                      <button
+                        onClick={() => {
+                          setAccountMenuOpen(false);
+                          handleSignupClick();
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-violet-50"
+                      >
+                        Sign up
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAccountMenuOpen(false);
+                          handleLoginClick();
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-violet-50"
+                      >
+                        Log in
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="py-1">
+                      <button
+                        onClick={() => {
+                          setAccountMenuOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-violet-50"
+                      >
+                        Log out
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -254,45 +297,23 @@ export default function ChatPage() {
               </p>
             </header>
 
-            {/* Free messages / access info */}
-            <div className="space-y-2 text-[11px]">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-700">
-                  {effectiveUnlocked ? (
-                    <>
-                      You currently have{" "}
-                      <strong className="font-semibold">full access</strong>.
-                    </>
-                  ) : remaining > 0 ? (
-                    <>
-                      You have{" "}
-                      <strong className="font-semibold">
-                        {remaining} free message{remaining === 1 ? "" : "s"}
-                      </strong>{" "}
-                      left.
-                    </>
-                  ) : (
-                    <span className="text-amber-800">
-                      Your free messages are used up. Unlock to keep talking.
-                    </span>
-                  )}
-                </span>
-                {!effectiveUnlocked && (
-                  <span className="text-[10px] text-slate-500">
-                    Limit: {FREE_LIMIT} messages
-                  </span>
+            {/* Timer info (mobile + inline) */}
+            {!isLoggedIn && (
+              <div className="space-y-1 text-[11px]">
+                {secondsLeft > 0 ? (
+                  <p className="text-slate-700">
+                    You&apos;re trying Ventfreely without an account. You have{" "}
+                    <strong>{formattedTime}</strong> of free chat time left
+                    before we ask you to unlock access.
+                  </p>
+                ) : (
+                  <p className="text-amber-800">
+                    Your free time as a guest has ended. To keep talking, please
+                    unlock access via checkout.
+                  </p>
                 )}
               </div>
-
-              {!effectiveUnlocked && (
-                <div className="h-1.5 w-full rounded-full bg-white/60 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4] transition-all"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Messages area */}
             <div className="flex flex-col gap-2 max-h-[420px] min-h-[260px] overflow-y-auto py-3 border-y border-violet-200/50">
@@ -342,32 +363,30 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Lock notice */}
-            {isLocked && !effectiveUnlocked && (
+            {/* Paywall for guests after timer */}
+            {isLocked && !isLoggedIn && (
               <div className="space-y-2 text-[11px] border-t border-violet-200/40 pt-3">
                 <p className="text-slate-700">
-                  You&apos;ve used all <strong>{FREE_LIMIT}</strong> free
-                  messages. To keep talking without limits for 14 days, you can
-                  unlock full access for <strong>€2.99</strong>.
+                  Your free 2-minute guest session has ended. To keep talking
+                  without time limits, you can unlock access for{" "}
+                  <strong>€2.99 / 14 days</strong>.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={handleUnlockClick}
                     className="px-4 py-2 rounded-full bg-[#401268] text-white text-xs font-semibold shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition"
                   >
-                    Unlock full access · €2.99
-                  </button>
-                  <button
-                    onClick={handleAlreadyUnlocked}
-                    className="px-3 py-2 rounded-full border border-[#401268]/25 text-xs text-[#401268] bg-white/60 hover:bg-white transition"
-                  >
-                    I already have access
+                    Go to checkout · €2.99
                   </button>
                 </div>
                 <p className="text-[10px] text-slate-500">
-                  Right now this button still unlocks on this device only. Once
-                  the Shopify integration is fully wired, your access will be
-                  unlocked automatically after payment on your account.
+                  In Shopify, set the post-checkout redirect to your{" "}
+                  <code className="bg-slate-50 px-1 rounded">
+                    /signup
+                  </code>{" "}
+                  page so users can create their account right after payment.
+                  Make sure they use the same email at checkout and for
+                  signup.
                 </p>
               </div>
             )}
@@ -377,19 +396,19 @@ export default function ChatPage() {
               <input
                 className="flex-1 rounded-full bg-white/80 border border-violet-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5] disabled:opacity-50"
                 placeholder={
-                  isLocked && !effectiveUnlocked
-                    ? "Free messages are used up. Unlock access to keep talking."
+                  isLocked && !isLoggedIn
+                    ? "Your free time as a guest has ended. Unlock access to keep talking."
                     : "Type whatever you’re thinking right now…"
                 }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={isLocked && !effectiveUnlocked}
+                disabled={isLocked && !isLoggedIn}
               />
               <button
                 onClick={handleSend}
                 className="px-4 py-2 rounded-full text-sm font-medium bg-[#401268] text-white hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!input.trim() || (isLocked && !effectiveUnlocked)}
+                disabled={!input.trim() || (isLocked && !isLoggedIn)}
               >
                 Send
               </button>
@@ -410,7 +429,7 @@ export default function ChatPage() {
               <ul className="space-y-1 list-disc pl-4 text-xs text-slate-700">
                 <li>Anonymous by default – you don&apos;t need your real name.</li>
                 <li>Validates your feelings instead of judging them.</li>
-                <li>Short free trial, then affordable access if it helps you.</li>
+                <li>Short free session, then affordable access if it helps you.</li>
               </ul>
             </section>
 
