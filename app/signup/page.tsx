@@ -1,18 +1,27 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
 export default function SignupPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const fromCheckout = searchParams.get("from") === "checkout";
+
+  const [fromCheckout, setFromCheckout] = useState(false);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Read ?from=checkout only in the browser (no issues with prerender)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("from") === "checkout") {
+      setFromCheckout(true);
+    }
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -142,17 +151,16 @@ export default function SignupPage() {
             )}
 
             {!fromCheckout && (
-              <h2 className="text-lg font-semibold text-[#2A1740]">
-                Sign up to start venting
-              </h2>
-            )}
-
-            {!fromCheckout && (
-              <p className="text-xs text-slate-600">
-                Create an account so you can return to your conversation
-                anytime. If you&apos;ve already paid, use the same email you
-                used at checkout.
-              </p>
+              <>
+                <h2 className="text-lg font-semibold text-[#2A1740]">
+                  Sign up to start venting
+                </h2>
+                <p className="text-xs text-slate-600">
+                  Create an account so you can return to your conversation
+                  anytime. If you&apos;ve already paid, use the same email you
+                  used at checkout.
+                </p>
+              </>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-3 mt-2">
