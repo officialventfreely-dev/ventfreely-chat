@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "../../../../../lib/supabaseAdmin";
+import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 
 // Example shape - you will adjust fields to match your Shopify app's webhook payload
 type ShopifySubscriptionEvent = {
