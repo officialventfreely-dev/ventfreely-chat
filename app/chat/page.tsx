@@ -14,7 +14,7 @@ const FREE_SECONDS = 120; // 2 minutes
 
 // Shopify checkout URL (set this to your real checkout link)
 const SHOPIFY_CHECKOUT_URL =
-  "https://ventfreely.com/checkouts/cn/hWN725VxGoce2BUe9FrEvdmF/en-ee?_r=AQABNbyc5Ctd37Q487qYXfMKfSlhlJam-JhDpCjf_X1nqHg&preview_theme_id=191156912392";
+  "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -31,9 +31,10 @@ export default function ChatPage() {
   const [isLoadingReply, setIsLoadingReply] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auth state
+  // Auth + subscription state
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
 
   // Timer for anonymous users
   const [secondsLeft, setSecondsLeft] = useState(FREE_SECONDS);
@@ -42,9 +43,18 @@ export default function ChatPage() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
   const isLoggedIn = !!userEmail;
-  const isLocked = !isLoggedIn && secondsLeft <= 0;
+  const isGuest = !isLoggedIn;
+  const hasUnlimitedAccess = hasActiveSubscription;
 
-  // Timeline progress (0 → 100%)
+  // Locked, if:
+  // - user has NO active subscription AND
+  //   - is guest and free time is over, OR
+  //   - is logged in but still no subscription
+  const isLocked =
+    !hasUnlimitedAccess &&
+    ((isGuest && secondsLeft <= 0) || (!isGuest && !hasUnlimitedAccess));
+
+  // Timeline progress (0 → 100%) – only meaningful for guests
   const totalSeconds = FREE_SECONDS;
   const usedSeconds = Math.min(totalSeconds - secondsLeft, totalSeconds);
   const progressPercent =
@@ -55,28 +65,54 @@ export default function ChatPage() {
     .toString()
     .padStart(1, "0")}:${(secondsLeft % 60).toString().padStart(2, "0")}`;
 
-  // 1) Check Supabase session on mount
+  const showGuestTimerUI = isGuest && !hasUnlimitedAccess;
+
+  // 1) Check Supabase session + subscription on mount
   useEffect(() => {
-    async function loadSession() {
+    async function loadSessionAndSubscription() {
       try {
         const {
           data: { session },
         } = await supabaseBrowser.auth.getSession();
-        setUserEmail(session?.user?.email ?? null);
+
+        const email = session?.user?.email ?? null;
+        setUserEmail(email);
+
+        if (!session?.user) {
+          setHasActiveSubscription(false);
+          setCheckingSession(false);
+          return;
+        }
+
+        // Check subscriptions table for active subscription
+        const { data, error } = await supabaseBrowser
+          .from("subscriptions")
+          .select("status,current_period_end")
+          .eq("user_id", session.user.id)
+          .eq("status", "active")
+          .gt("current_period_end", new Date().toISOString())
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          setHasActiveSubscription(true);
+        } else {
+          setHasActiveSubscription(false);
+        }
       } catch (err) {
-        console.error("Error checking session:", err);
+        console.error("Error checking session/subscription:", err);
+        setHasActiveSubscription(false);
       } finally {
         setCheckingSession(false);
       }
     }
 
-    loadSession();
+    loadSessionAndSubscription();
   }, []);
 
-  // 2) Start 2-minute timer ONLY if user is NOT logged in
+  // 2) Start 2-minute timer ONLY if user is guest and has no subscription
   useEffect(() => {
-    if (checkingSession) return; // wait until we know login status
-    if (isLoggedIn) return; // logged-in users have no timer/paywall
+    if (checkingSession) return; // wait until we know login + subscription status
+    if (!showGuestTimerUI) return; // no timer for logged-in or subscribed users
 
     setSecondsLeft(FREE_SECONDS);
     const start = Date.now();
@@ -92,7 +128,7 @@ export default function ChatPage() {
     }, 1000);
 
     return () => clearInterval(id);
-  }, [checkingSession, isLoggedIn]);
+  }, [checkingSession, showGuestTimerUI]);
 
   // 3) Send messages to your /api/chat backend
   const sendToBackend = async (conversation: Message[]) => {
@@ -175,7 +211,8 @@ export default function ChatPage() {
     try {
       await supabaseBrowser.auth.signOut();
       setUserEmail(null);
-      setSecondsLeft(FREE_SECONDS); // start timer again for anonymous
+      setHasActiveSubscription(false);
+      setSecondsLeft(FREE_SECONDS); // start timer again as guest
       router.push("/");
     } catch (err) {
       console.error("Logout error:", err);
@@ -200,9 +237,7 @@ export default function ChatPage() {
           {/* Left: logo + tagline */}
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-              <span className="text-xs font-semibold tracking-tight">
-                VF
-              </span>
+              <span className="text-xs font-semibold tracking-tight">VF</span>
             </div>
             <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold tracking-tight">
@@ -216,8 +251,8 @@ export default function ChatPage() {
 
           {/* Right: timer (for guests) + account menu */}
           <div className="flex items-center gap-3">
-            {/* Timer for guests */}
-            {!isLoggedIn && (
+            {/* Timer for guests without subscription */}
+            {showGuestTimerUI && (
               <div className="hidden sm:flex items-center gap-1 text-[11px] text-violet-100/90">
                 <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
@@ -292,7 +327,7 @@ export default function ChatPage() {
       </header>
 
       {/* YouTube-style top progress bar for guest timer */}
-      {!isLoggedIn && (
+      {showGuestTimerUI && (
         <div className="w-full bg-[#FAF8FF]">
           <div className="mx-auto max-w-5xl px-4 md:px-6 pt-2">
             <div className="h-1.5 w-full rounded-full bg-white/70 overflow-hidden shadow-[0_0_0_1px_rgba(148,163,184,0.25)]">
@@ -306,7 +341,7 @@ export default function ChatPage() {
       )}
 
       {/* 🔔 Floating info overlay after 2 min (only for guests) */}
-      {isLocked && !isLoggedIn && (
+      {isLocked && isGuest && (
         <div className="fixed inset-0 z-[60] flex items-start justify-center pointer-events-none">
           <div className="mt-10 vf-animate-slide-down pointer-events-auto">
             <div className="rounded-2xl shadow-2xl border border-violet-200/60 bg-white/95 backdrop-blur-md px-6 py-4 max-w-[380px] text-center">
@@ -346,8 +381,8 @@ export default function ChatPage() {
               </p>
             </header>
 
-            {/* Timer info inside chat for guests */}
-            {!isLoggedIn && (
+            {/* Timer / access info */}
+            {showGuestTimerUI ? (
               <div className="space-y-1 text-[11px]">
                 {secondsLeft > 0 ? (
                   <p className="text-slate-700">
@@ -363,7 +398,15 @@ export default function ChatPage() {
                   </p>
                 )}
               </div>
-            )}
+            ) : !hasUnlimitedAccess && isLoggedIn ? (
+              <div className="space-y-1 text-[11px]">
+                <p className="text-amber-800">
+                  Your account doesn&apos;t have an active Ventfreely
+                  subscription yet. To keep talking without limits, please
+                  unlock access with the same email you used here.
+                </p>
+              </div>
+            ) : null}
 
             {/* Messages area */}
             <div className="flex flex-col gap-2 max-h-[420px] min-h-[260px] overflow-y-auto py-3 border-y border-violet-200/50">
@@ -414,7 +457,7 @@ export default function ChatPage() {
             )}
 
             {/* Paywall for guests after timer */}
-            {isLocked && !isLoggedIn && (
+            {isLocked && isGuest && (
               <div className="space-y-2 text-[11px] border-t border-violet-200/40 pt-3">
                 <p className="text-slate-700">
                   Your free 2-minute guest session has ended. To keep talking
@@ -442,19 +485,19 @@ export default function ChatPage() {
               <input
                 className="flex-1 rounded-full bg-white/80 border border-violet-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5] disabled:opacity-50"
                 placeholder={
-                  isLocked && !isLoggedIn
-                    ? "Your free time as a guest has ended. Unlock access to keep talking."
+                  isLocked
+                    ? "Access is locked. Unlock Ventfreely to keep talking."
                     : "Type whatever you’re thinking right now…"
                 }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={isLocked && !isLoggedIn}
+                disabled={isLocked}
               />
               <button
                 onClick={handleSend}
                 className="px-4 py-2 rounded-full text-sm font-medium bg-[#401268] text-white hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!input.trim() || (isLocked && !isLoggedIn)}
+                disabled={!input.trim() || isLocked}
               >
                 Send
               </button>
