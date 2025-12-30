@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
@@ -14,7 +14,7 @@ const FREE_SECONDS = 120; // 2 minutes
 
 // Shopify checkout URL (set this to your real checkout link)
 const SHOPIFY_CHECKOUT_URL =
-  "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
+  "https://ventfreely.com/checkouts/cn/hWN725VxGoce2BUe9FrEvdmF/en-ee?_r=AQABNbyc5Ctd37Q487qYXfMKfSlhlJam-JhDpCjf_X1nqHg&preview_theme_id=191156912392";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -31,7 +31,7 @@ export default function ChatPage() {
   const [isLoadingReply, setIsLoadingReply] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auth state (just track email to know if logged in)
+  // Auth state
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
 
@@ -154,7 +154,7 @@ export default function ChatPage() {
 
   const handleUnlockClick = () => {
     // Here you send user to Shopify checkout.
-    // In Shopify settings, configure SUCCESS redirect → https://yourdomain/signup
+    // In Shopify settings, you explain in emails that they’ll get a signup link.
     window.location.href = SHOPIFY_CHECKOUT_URL;
   };
 
@@ -216,7 +216,11 @@ export default function ChatPage() {
               <div className="hidden sm:flex items-center gap-1 text-[11px] text-violet-100/90">
                 <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                  <span>{secondsLeft > 0 ? `Free time: ${formattedTime}` : "Free time ended"}</span>
+                  <span>
+                    {secondsLeft > 0
+                      ? `Free time: ${formattedTime}`
+                      : "Free time ended"}
+                  </span>
                 </span>
               </div>
             )}
@@ -229,7 +233,9 @@ export default function ChatPage() {
               >
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
                   <span className="text-xs font-semibold">
-                    {isLoggedIn ? (userEmail?.charAt(0).toUpperCase() ?? "U") : "A"}
+                    {isLoggedIn
+                      ? userEmail?.charAt(0).toUpperCase() ?? "U"
+                      : "A"}
                   </span>
                 </div>
                 <span className="hidden sm:inline text-violet-100/90">
@@ -280,6 +286,30 @@ export default function ChatPage() {
         </div>
       </header>
 
+      {/* 🔔 Floating info overlay after 2 min (only for guests) */}
+      {isLocked && !isLoggedIn && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center pointer-events-none">
+          <div className="mt-10 vf-animate-slide-down pointer-events-auto">
+            <div className="rounded-2xl shadow-2xl border border-violet-200/60 bg-white/95 backdrop-blur-md px-6 py-4 max-w-[380px] text-center">
+              <h3 className="text-sm font-semibold text-[#2A1740]">
+                Your free time has ended
+              </h3>
+
+              <p className="text-xs text-slate-700 mt-2 leading-relaxed">
+                To keep chatting, you’ll be taken to checkout.
+                <br />
+                After payment, you&apos;ll receive an email with a link to
+                create your Ventfreely account and activate access.
+              </p>
+
+              <div className="flex justify-center mt-3">
+                <div className="h-1.5 w-24 rounded-full bg-gradient-to-r from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4]" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
         <div className="grid gap-8 md:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)] items-start">
@@ -297,7 +327,7 @@ export default function ChatPage() {
               </p>
             </header>
 
-            {/* Timer info (mobile + inline) */}
+            {/* Timer info inside chat for guests */}
             {!isLoggedIn && (
               <div className="space-y-1 text-[11px]">
                 {secondsLeft > 0 ? (
@@ -309,7 +339,8 @@ export default function ChatPage() {
                 ) : (
                   <p className="text-amber-800">
                     Your free time as a guest has ended. To keep talking, please
-                    unlock access via checkout.
+                    unlock access via checkout. After payment, check your email
+                    for a link to create your Ventfreely account.
                   </p>
                 )}
               </div>
@@ -380,13 +411,9 @@ export default function ChatPage() {
                   </button>
                 </div>
                 <p className="text-[10px] text-slate-500">
-                  In Shopify, set the post-checkout redirect to your{" "}
-                  <code className="bg-slate-50 px-1 rounded">
-                    /signup
-                  </code>{" "}
-                  page so users can create their account right after payment.
-                  Make sure they use the same email at checkout and for
-                  signup.
+                  After checkout, check your email. You&apos;ll receive a link
+                  to create your Ventfreely account with the same email you used
+                  for payment.
                 </p>
               </div>
             )}
@@ -429,7 +456,9 @@ export default function ChatPage() {
               <ul className="space-y-1 list-disc pl-4 text-xs text-slate-700">
                 <li>Anonymous by default – you don&apos;t need your real name.</li>
                 <li>Validates your feelings instead of judging them.</li>
-                <li>Short free session, then affordable access if it helps you.</li>
+                <li>
+                  Short free session, then affordable access if it helps you.
+                </li>
               </ul>
             </section>
 
