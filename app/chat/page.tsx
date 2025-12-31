@@ -24,9 +24,10 @@ export default function ChatPage() {
     {
       id: 1,
       role: "assistant",
-      text: "Hey, I’m Ventfreely. You can vent about anything here. What’s on your mind right now?",
+      text: "Hey. You can vent about to me. What’s on your mind?",
     },
   ]);
+  const [userId, setUserId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [isLoadingReply, setIsLoadingReply] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,14 @@ export default function ChatPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
+
+  // Memory state
+  const [memorySummary, setMemorySummary] = useState<string | null>(null);
+  const [memoryLastUser, setMemoryLastUser] = useState<string | null>(null);
+  const [memoryLastAssistant, setMemoryLastAssistant] = useState<string | null>(
+    null
+  );
+  const [isClearingMemory, setIsClearingMemory] = useState(false);
 
   // Timer for anonymous users
   const [secondsLeft, setSecondsLeft] = useState(FREE_SECONDS);
@@ -67,7 +76,7 @@ export default function ChatPage() {
 
   const showGuestTimerUI = isGuest && !hasUnlimitedAccess;
 
-  // 1) Check Supabase session + subscription on mount
+  // 1) Check Supabase session + subscription + memory on mount
   useEffect(() => {
     async function loadSessionAndSubscription() {
       try {
@@ -77,15 +86,16 @@ export default function ChatPage() {
 
         const email = session?.user?.email ?? null;
         setUserEmail(email);
+        const id = session?.user?.id ?? null;
+        setUserId(id);
 
         if (!session?.user) {
           setHasActiveSubscription(false);
-          setCheckingSession(false);
           return;
         }
 
         // Check subscriptions table for active subscription
-        const { data, error } = await supabaseBrowser
+        const { data: subs, error: subsError } = await supabaseBrowser
           .from("subscriptions")
           .select("status,current_period_end")
           .eq("user_id", session.user.id)
@@ -93,13 +103,28 @@ export default function ChatPage() {
           .gt("current_period_end", new Date().toISOString())
           .limit(1);
 
-        if (!error && data && data.length > 0) {
+        if (!subsError && subs && subs.length > 0) {
           setHasActiveSubscription(true);
         } else {
           setHasActiveSubscription(false);
         }
+
+        // Load last memory summary + last messages
+        const { data: convs, error: convError } = await supabaseBrowser
+          .from("conversations")
+          .select("summary, last_user_message, last_assistant_message")
+          .eq("user_id", session.user.id)
+          .eq("is_deleted", false)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (!convError && convs && convs.length > 0) {
+          setMemorySummary(convs[0].summary);
+          setMemoryLastUser(convs[0].last_user_message);
+          setMemoryLastAssistant(convs[0].last_assistant_message);
+        }
       } catch (err) {
-        console.error("Error checking session/subscription:", err);
+        console.error("Error checking session/subscription/memory:", err);
         setHasActiveSubscription(false);
       } finally {
         setCheckingSession(false);
@@ -130,7 +155,7 @@ export default function ChatPage() {
     return () => clearInterval(id);
   }, [checkingSession, showGuestTimerUI]);
 
-  // 3) Send messages to your /api/chat backend
+  // 3) Send messages to your /api/chat backend (with userId for memory)
   const sendToBackend = async (conversation: Message[]) => {
     const payloadMessages = conversation.map((m) => ({
       role: m.role === "user" ? "user" : "assistant",
@@ -140,7 +165,10 @@ export default function ChatPage() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: payloadMessages }),
+      body: JSON.stringify({
+        messages: payloadMessages,
+        userId, // important: ties memory to logged-in user
+      }),
     });
 
     if (!res.ok) {
@@ -211,11 +239,46 @@ export default function ChatPage() {
     try {
       await supabaseBrowser.auth.signOut();
       setUserEmail(null);
+      setUserId(null);
       setHasActiveSubscription(false);
       setSecondsLeft(FREE_SECONDS); // start timer again as guest
+      setMemorySummary(null);
+      setMemoryLastUser(null);
+      setMemoryLastAssistant(null);
       router.push("/");
     } catch (err) {
       console.error("Logout error:", err);
+    }
+  };
+
+  const handleClearMemory = async () => {
+    if (!userId) return;
+    try {
+      setIsClearingMemory(true);
+      const { error } = await supabaseBrowser
+        .from("conversations")
+        .update({
+          is_deleted: true,
+          summary: null,
+          last_user_message: null,
+          last_assistant_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId)
+        .eq("is_deleted", false);
+
+      if (error) {
+        console.error("Error clearing memory:", error);
+        return;
+      }
+
+      setMemorySummary(null);
+      setMemoryLastUser(null);
+      setMemoryLastAssistant(null);
+    } catch (err) {
+      console.error("Error clearing memory:", err);
+    } finally {
+      setIsClearingMemory(false);
     }
   };
 
@@ -379,6 +442,33 @@ export default function ChatPage() {
                 your head. No judgment. No pressure. Just a supportive AI
                 friend listening to you.
               </p>
+
+              {/* Memory summary pill */}
+              {isLoggedIn && memorySummary && (
+                <div className="mt-3 rounded-xl bg-white/80 border border-violet-200 px-3 py-2 text-[11px] text-slate-700">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-[11px] text-[#2A1740] mb-1">
+                        Last time you talked about:
+                      </div>
+                      <p className="line-clamp-4">{memorySummary}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span className="text-[10px] text-slate-500">
+                      Ventfreely remembers this summary to help you not start
+                      from zero.
+                    </span>
+                    <button
+                      onClick={handleClearMemory}
+                      disabled={isClearingMemory}
+                      className="text-[10px] text-[#401268] hover:underline disabled:opacity-60"
+                    >
+                      {isClearingMemory ? "Clearing…" : "Delete my memory"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </header>
 
             {/* Timer / access info */}

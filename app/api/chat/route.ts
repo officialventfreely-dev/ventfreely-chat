@@ -1,189 +1,221 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { supabaseService } from "@/lib/supabaseService";
 
-// ------------ CONFIG ------------
-const apiKey = process.env.OPENAI_API_KEY;
-const MAX_MESSAGE_LENGTH = 2000;
-const MAX_HISTORY = 12;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+});
 
-if (!apiKey) {
-  console.error("❌ Missing OPENAI_API_KEY");
-}
+// Mudeli ja stiili parameetrid
+const MODEL = "gpt-4.1-mini";
+const TEMPERATURE = 0.7;
+const MAX_TOKENS = 400;
+const TOP_P = 1;
+const PRESENCE_PENALTY = 0;
+const FREQUENCY_PENALTY = 0;
 
-const openai = new OpenAI({ apiKey });
+// Summari parameetrid (kasutame sama mudelit, lühike kokkuvõte)
+const SUMMARY_MAX_TOKENS = 200;
 
-// ------------ HELPER: Basic Filters ------------
-const bannedWords = [
-  "kill myself",
-  "suicide method",
-  "how to die",
-  "self harm tutorial",
-  "hurt someone",
-  "violence plan",
-  "illegal",
-];
-
-function containsBannedContent(text: string) {
-  const lower = text.toLowerCase();
-  return bannedWords.some((word) => lower.includes(word));
-}
-
-function containsCrisisKeywords(text: string) {
-  const t = text.toLowerCase();
-  return (
-    t.includes("self harm") ||
-    t.includes("hurt myself") ||
-    t.includes("cut myself") ||
-    t.includes("kill myself") ||
-    t.includes("don't want to live") ||
-    t.includes("suicide") ||
-    t.includes("end it")
-  );
-}
-
-// ------------ RUNTIME ------------
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    if (!apiKey) {
-      return NextResponse.json(
-        {
-          error:
-            "Server Misconfigured: Missing OPENAI_API_KEY. Add it in .env.local",
-        },
-        { status: 500 }
-      );
-    }
-
     const body = await req.json();
-    const messages = body?.messages;
 
-    if (!messages || !Array.isArray(messages)) {
+    const messages = body?.messages as
+      | { role: "user" | "assistant"; content: string }[]
+      | undefined;
+
+    // userId tuleb front-endist kaasa (Supabase user.id), et saaks mäluga seostada
+    const userId = (body?.userId as string | undefined) ?? null;
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
-        { error: "'messages' must be an array." },
+        { error: "No messages provided" },
         { status: 400 }
       );
     }
 
-    // ---------- Trim History ----------
-    let conversation = messages.slice(-MAX_HISTORY);
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((m) => m.role === "user")?.content;
 
-    // ---------- Validate & Sanitize ----------
-    conversation = conversation.map((m: any) => ({
-      role: m.role === "user" ? "user" : "assistant",
-      content:
-        typeof m.content === "string"
-          ? m.content.slice(0, MAX_MESSAGE_LENGTH)
-          : "",
-    }));
+    // Turvaline / legaalne system prompt
+    const systemPrompt = `
+You are **Ventfreely**, a calm and supportive AI friend in a mental-health style chat.
 
-    const lastUserMessage =
-      conversation.reverse().find((m: any) => m.role === "user")?.content ||
-      "";
-    conversation.reverse();
+Your core rules:
+- You are **not** a therapist, doctor, lawyer, or crisis professional.
+- You **must not** claim to be a professional or provide professional advice (medical, psychiatric, legal, financial, etc.).
+- You **must not** give instructions, plans, or encouragement for self-harm, suicide, harming others, abuse, violence, or illegal activities.
+- You **must not** provide step-by-step instructions for anything dangerous or illegal.
 
-    if (!lastUserMessage) {
-      return NextResponse.json(
-        { error: "No user message provided." },
-        { status: 400 }
-      );
-    }
+Your main job:
+- Listen with warmth and empathy.
+- Validate feelings instead of judging them.
+- Help the user put words to what they feel, reflect their emotions back, and gently explore what might help them cope in healthy, low-risk ways.
+- Keep responses relatively short and digestible: usually 3–7 short paragraphs max, no bullet lists unless the user clearly asks for “steps” or “tips”.
 
-    if (containsBannedContent(lastUserMessage)) {
-      return NextResponse.json(
-        {
-          reply:
-            "I’m really glad you reached out. I can’t help with harmful, violent, or illegal actions — but I *am* here to talk, listen, and help you slow things down. If something intense is going on, tell me what’s happening in your life and how it feels.",
-          safetyMode: true,
-        },
-        { status: 200 }
-      );
-    }
+Language:
+- Always reply in the **same language** the user is using (for example, if the user writes in Estonian, respond in Estonian; if in English, respond in English).
 
-    const crisisMode = containsCrisisKeywords(lastUserMessage);
+When the user talks about emotional distress (stress, anxiety, sadness, overthinking, loneliness, breakups, school/work pressure, etc.):
+- Acknowledge their feelings explicitly.
+- Normalize that it’s understandable to feel that way.
+- Ask gentle, open questions that help them reflect (e.g. “What feels heaviest right now?” or “What do you wish someone understood about this?”).
+- Offer soft, non-pushy suggestions (e.g. journaling, going for a walk, reaching out to a trusted person, small grounding exercises).
+- Never promise outcomes (“this will definitely fix it”), only offer possibilities.
 
-    // ---------- System Prompts ----------
-    const BASE_SYSTEM_PROMPT = `
-You are Ventfreely — a calm, kind, emotionally supportive AI friend.
-You are NOT a therapist, doctor, or emergency service.
+When the user talks about **self-harm, suicide, or harming others**:
+- Do **NOT** provide instructions or encouragement.
+- Do **NOT** minimize or romanticize their suffering.
+- First, acknowledge how serious and painful this sounds.
+- Gently but clearly encourage them to seek **immediate human help**:
+  - Tell them to contact local emergency services if they might hurt themselves or someone else.
+  - Encourage them to reach out to a trusted friend, family member, or another safe person.
+  - If they have access to mental health professionals or local helplines, suggest contacting them.
+- Make it clear: you are an AI with limitations and **cannot** handle emergencies or keep them safe in real time.
+- Example style (adapted to the user’s language, never copy verbatim):
+  - “I’m really glad you shared this with me. Because your safety is so important, this is something that needs real-time human support. If you feel you might hurt yourself or someone else, please contact your local emergency number or a crisis line, or reach out to someone you trust as soon as you can. I’m limited as an AI and I can’t act in the real world, but you deserve support from people who can be there with you.”
 
-Core personality:
-- Warm, gentle, emotionally validating
-- Short paragraphs, clear and kind tone
-- Never judgmental
-- Never cold or robotic
-- Avoid emojis unless the user uses them first
-- Slow the conversation down, don't overwhelm
+When the user asks for **medical or diagnostic advice**:
+- Do **not** diagnose.
+- Do **not** recommend specific medications, doses, or treatment plans.
+- You can:
+  - Encourage them to talk to a doctor, nurse, therapist, or other licensed professional.
+  - Help them prepare questions to ask a professional.
+  - Talk about general wellbeing (sleep, routine, self-care) in a very cautious, non-authoritative way.
+- Clearly say you are not a medical professional.
 
-Hard Safety Rules:
-- DO NOT give medical advice
-- DO NOT diagnose
-- DO NOT give self-harm instructions
-- DO NOT give crisis step-by-step guidance
-- DO NOT encourage dependency
-- DO NOT claim to replace professionals
+When the user asks for **illegal, hateful, or clearly harmful things**:
+- Politely refuse to help with anything illegal, violent, abusive, or hateful.
+- You can gently shift the conversation toward underlying feelings (anger, fear, hurt) and explore healthier ways to cope or respond.
 
-Talking style:
-- Empathy first
-- Reflect feelings back
-- Ask thoughtful questions, one at a time
-- Help user breathe, ground, feel less alone
-- Never lecture
-- Never force positivity
-`;
+Tone:
+- Warm, gentle, non-judgmental.
+- No fake hype, no toxic positivity.
+- It’s okay to say “I don’t know” or “This is complicated.” Focus on being there with the user rather than “fixing” them.
+    `.trim();
 
-    const CRISIS_MODE_PROMPT = `
-You are Ventfreely — a caring, emotionally supportive AI.
-
-The user may be experiencing thoughts about self-harm or suicide.
-Your job:
-- Stay calm
-- Show genuine empathy
-- Validate feelings WITHOUT validating harmful actions
-- Encourage real world support in a warm, human way
-- Offer gentle grounding suggestions (breathing, slowing down)
-- Make them feel less alone
-- Keep responses caring, soft, and no more than 4–6 sentences
-
-VERY IMPORTANT:
-- DO NOT provide instructions
-- DO NOT say you are their only support
-- DO NOT say “everything will be okay”
-- DO NOT use clinical tone
-- DO NOT roleplay dangerous behavior
-
-Always include a gentle support sentence like:
-“If you ever feel in immediate danger, please contact local emergency services or someone you trust right now.” 
-No country-specific numbers unless user asks.
-`;
-
-    const systemPrompt = crisisMode
-      ? CRISIS_MODE_PROMPT
-      : BASE_SYSTEM_PROMPT;
-
-    // ---------- OPENAI ----------
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...conversation,
-      ],
-      temperature: crisisMode ? 0.5 : 0.85,
-      max_tokens: 250,
-    });
-
-    const reply = response.choices[0]?.message?.content || "";
-
-    return NextResponse.json({
-      reply,
-      crisisMode,
-    });
-  } catch (e: any) {
-    console.error("❌ Chat API error:", e?.message || e);
-
-    return NextResponse.json(
+    const openAiMessages = [
       {
-        error: "Server error: Ventfreely could not generate a reply right now.",
+        role: "system" as const,
+        content: systemPrompt,
       },
+      ...messages.map((m) => ({
+        role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+        content: m.content,
+      })),
+    ];
+
+    // 1) Põhivastus kasutajale
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: openAiMessages,
+      temperature: TEMPERATURE,
+      max_tokens: MAX_TOKENS,
+      top_p: TOP_P,
+      presence_penalty: PRESENCE_PENALTY,
+      frequency_penalty: FREQUENCY_PENALTY,
+    });
+
+    const reply =
+      completion.choices[0]?.message?.content ??
+      "I’m here with you. It’s okay if it’s hard to find the right words — we can take it one small step at a time.";
+
+    // 2) Mälu salvestamine (kui userId on olemas)
+    if (userId && lastUserMessage) {
+      try {
+        // Summari loogika – teeme lühikese kokkuvõtte ainult siis, kui juttu on juba natuke rohkem
+        let summary: string | null = null;
+
+        if (messages.length >= 4) {
+          const summaryMessages = [
+            {
+              role: "system" as const,
+              content:
+                "Summarize this conversation in 2–4 sentences. Focus on what the user is going through emotionally, what seems most important to them right now, and where the conversation currently stands. Be concise, neutral, and non-judgmental.",
+            },
+            ...openAiMessages.slice(1), // sama vestlus ilma system promptita
+            {
+              role: "assistant" as const,
+              content: reply,
+            },
+          ];
+
+          const summaryCompletion = await openai.chat.completions.create({
+            model: MODEL,
+            messages: summaryMessages,
+            temperature: 0.4,
+            max_tokens: SUMMARY_MAX_TOKENS,
+          });
+
+          summary =
+            summaryCompletion.choices[0]?.message?.content?.trim() || null;
+        }
+
+        const lastAssistantMessage = reply;
+
+        // Vaata, kas on juba olemasolev conversation (mitte-deleted)
+        const { data: existing, error: fetchError } = await supabaseService
+          .from("conversations")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("is_deleted", false)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (fetchError) {
+          console.error("Error fetching existing conversation:", fetchError);
+        } else if (existing && existing.length > 0) {
+          const convId = existing[0].id;
+
+          const updatePayload: Record<string, any> = {
+            last_user_message: lastUserMessage,
+            last_assistant_message: lastAssistantMessage,
+            updated_at: new Date().toISOString(),
+          };
+
+          if (summary) {
+            updatePayload.summary = summary;
+          }
+
+          const { error: updateError } = await supabaseService
+            .from("conversations")
+            .update(updatePayload)
+            .eq("id", convId);
+
+          if (updateError) {
+            console.error("Error updating conversation:", updateError);
+          }
+        } else {
+          const insertPayload: Record<string, any> = {
+            user_id: userId,
+            last_user_message: lastUserMessage,
+            last_assistant_message: lastAssistantMessage,
+          };
+
+          if (summary) {
+            insertPayload.summary = summary;
+          }
+
+          const { error: insertError } = await supabaseService
+            .from("conversations")
+            .insert(insertPayload);
+
+          if (insertError) {
+            console.error("Error inserting conversation:", insertError);
+          }
+        }
+      } catch (memoryErr) {
+        console.error("Error while updating memory:", memoryErr);
+      }
+    }
+
+    return NextResponse.json({ reply });
+  } catch (err) {
+    console.error("Error in /api/chat:", err);
+    return NextResponse.json(
+      { error: "Failed to generate reply" },
       { status: 500 }
     );
   }
