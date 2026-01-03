@@ -371,6 +371,17 @@ export default function ChatPage() {
                     </div>
                   ) : (
                     <div className="py-1">
+                      {/* ✅ NEW: Account button */}
+                      <button
+                        onClick={() => {
+                          setAccountMenuOpen(false);
+                          router.push("/account");
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-violet-50"
+                      >
+                        Account
+                      </button>
+
                       <button
                         onClick={() => {
                           setAccountMenuOpen(false);
@@ -606,7 +617,9 @@ export default function ChatPage() {
                 designed to feel like a calm friend, not a lecture.
               </p>
               <ul className="space-y-1 list-disc pl-4 text-xs text-slate-700">
-                <li>Anonymous by default – you don&apos;t need your real name.</li>
+                <li>
+                  Anonymous by default – you don&apos;t need your real name.
+                </li>
                 <li>Validates your feelings instead of judging them.</li>
                 <li>
                   Short free session, then affordable access if it helps you.
