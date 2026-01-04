@@ -2,27 +2,28 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
 export default function LoginPage() {
   const router = useRouter();
 
-  // ✅ next path read from URL at runtime (no useSearchParams => no prerender crash)
+  // ✅ runtime-only values (no window usage during render)
   const [nextPath, setNextPath] = useState("/chat");
+  const [oauthRedirectTo, setOauthRedirectTo] = useState<string>("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const n = params.get("next");
-    if (n && n.startsWith("/")) setNextPath(n);
-  }, []);
+    const safeNext = n && n.startsWith("/") ? n : "/chat";
+    setNextPath(safeNext);
 
-  // ✅ used for Google OAuth redirect
-  const oauthRedirectTo = useMemo(() => {
     const origin = window.location.origin;
-    return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
-  }, [nextPath]);
+    setOauthRedirectTo(
+      `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
+    );
+  }, []);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -54,6 +55,13 @@ export default function LoginPage() {
   async function handleGoogleLogin() {
     setError(null);
     setLoadingGoogle(true);
+
+    // ✅ if oauthRedirectTo not ready yet, wait (very rare)
+    if (!oauthRedirectTo) {
+      setLoadingGoogle(false);
+      setError("Please try again in a moment.");
+      return;
+    }
 
     const { error } = await supabaseBrowser.auth.signInWithOAuth({
       provider: "google",
@@ -130,7 +138,7 @@ export default function LoginPage() {
                   </label>
                   <input
                     type="password"
-                    className="w-full rounded-2xl border border-violet-200 px-3 py-2.5 text-sm bg-white text-slate-900"
+                    className="w-full rounded-2xl border border-violet-200 px-3 py-2.5 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5]"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -165,9 +173,8 @@ export default function LoginPage() {
               </p>
 
               <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
-                You’ll return to{" "}
-                <span className="font-semibold">{nextPath}</span> after logging
-                in.
+                You’ll return to <span className="font-semibold">{nextPath}</span>{" "}
+                after logging in.
               </p>
             </div>
           </div>
