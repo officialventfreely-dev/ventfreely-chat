@@ -1,79 +1,107 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
 export default function SignupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [fromCheckout, setFromCheckout] = useState(false);
+  // ✅ support both: ?from=checkout and ?next=/chat
+  const nextPath = useMemo(() => {
+    const n = searchParams.get("next");
+    if (!n) return "/chat";
+    return n.startsWith("/") ? n : "/chat";
+  }, [searchParams]);
+
+  const fromCheckout = useMemo(() => {
+    return searchParams.get("from") === "checkout";
+  }, [searchParams]);
+
+  // ✅ used for Google OAuth redirect
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const oauthRedirectTo = origin
+    ? `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`
+    : "";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loadingEmail, setLoadingEmail] = useState(false);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Read ?from=checkout only in the browser (no issues with prerender)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("from") === "checkout") {
-      setFromCheckout(true);
-    }
-  }, []);
+  // Optional: normalize email on blur
+  const normalizeEmail = () => setEmail((v) => v.trim().toLowerCase());
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!email.trim() || !password.trim()) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const trimmedPassword = password.trim();
+
+    if (!normalizedEmail || !trimmedPassword) {
       setError("Please fill in both email and password.");
       return;
     }
-
-    if (password.length < 6) {
+    if (trimmedPassword.length < 6) {
       setError("Password must be at least 6 characters long.");
       return;
     }
 
     try {
-      setLoading(true);
+      setLoadingEmail(true);
 
       // 1) Create account in Supabase
       const { error: signUpError } = await supabaseBrowser.auth.signUp({
-        email: email.trim(),
-        password: password.trim(),
+        email: normalizedEmail,
+        password: trimmedPassword,
       });
 
       if (signUpError) {
         setError(signUpError.message);
-        setLoading(false);
         return;
       }
 
-      // 2) Log in immediately (since email confirmation is disabled)
+      // 2) Log in immediately (if email confirmation is disabled)
       const { error: signInError } =
         await supabaseBrowser.auth.signInWithPassword({
-          email: email.trim(),
-          password: password.trim(),
+          email: normalizedEmail,
+          password: trimmedPassword,
         });
 
       if (signInError) {
         setError(signInError.message);
-        setLoading(false);
         return;
       }
 
-      // 3) Redirect to chat
-      router.push("/chat");
+      // 3) Redirect back
+      router.replace(nextPath);
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Please try again.");
     } finally {
-      setLoading(false);
+      setLoadingEmail(false);
     }
   };
+
+  async function handleGoogleSignup() {
+    setError(null);
+    setLoadingGoogle(true);
+
+    const { error } = await supabaseBrowser.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: oauthRedirectTo,
+      },
+    });
+
+    if (error) {
+      setLoadingGoogle(false);
+      setError(error.message);
+    }
+  }
 
   return (
     <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center px-4">
@@ -88,9 +116,7 @@ export default function SignupPage() {
           <div className="relative z-10 space-y-4">
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">
-                <span className="text-xs font-semibold tracking-tight">
-                  VF
-                </span>
+                <span className="text-xs font-semibold tracking-tight">VF</span>
               </div>
               <div className="flex flex-col leading-tight">
                 <span className="text-sm font-semibold tracking-tight">
@@ -108,15 +134,19 @@ export default function SignupPage() {
 
             <p className="text-sm text-violet-50/90 max-w-md">
               Your account lets you come back to the same safe space whenever
-              you need it. Just log in and continue your conversations without
-              starting from zero.
+              you need it. Log in and continue without starting from zero.
             </p>
 
             <ul className="space-y-1 text-xs text-violet-50/90">
+              <li>• Continue your saved conversations.</li>
               <li>• Access from any device when logged in.</li>
-              <li>• Short, affordable subscription instead of big commitment.</li>
-              <li>• A calm place to unload your thoughts when they feel heavy.</li>
+              <li>• A calm place to unload heavy thoughts.</li>
             </ul>
+
+            <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px]">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+              <span>You’ll return to {nextPath} after signup</span>
+            </div>
           </div>
         </section>
 
@@ -142,10 +172,9 @@ export default function SignupPage() {
             {fromCheckout && (
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-[11px] text-emerald-800 mb-1">
                 <p className="font-medium">Payment confirmed 💜</p>
-                <p>
-                  Please create your Ventfreely account using the{" "}
-                  <strong>same email</strong> you used at checkout. This will
-                  make sure your subscription can be linked to your account.
+                <p className="mt-1 leading-relaxed">
+                  Please create your account using the <strong>same email</strong>{" "}
+                  you used at checkout, so we can link your access.
                 </p>
               </div>
             )}
@@ -153,17 +182,31 @@ export default function SignupPage() {
             {!fromCheckout && (
               <>
                 <h2 className="text-lg font-semibold text-[#2A1740]">
-                  Sign up to start venting
+                  Sign up to continue
                 </h2>
                 <p className="text-xs text-slate-600">
-                  Create an account so you can return to your conversation
-                  anytime. If you&apos;ve already paid, use the same email you
-                  used at checkout.
+                  Create an account to save your chat and come back anytime.
                 </p>
               </>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-3 mt-2">
+            {/* ✅ Google signup */}
+            <button
+              onClick={handleGoogleSignup}
+              disabled={loadingGoogle || loadingEmail}
+              className="w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-semibold text-[#2A1740] shadow-sm hover:bg-violet-50 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {loadingGoogle ? "Connecting to Google…" : "Continue with Google"}
+            </button>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-violet-200/60" />
+              <span className="text-[11px] text-slate-500">or</span>
+              <div className="h-px flex-1 bg-violet-200/60" />
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-3">
               <div className="space-y-1 text-sm">
                 <label
                   htmlFor="email"
@@ -175,11 +218,13 @@ export default function SignupPage() {
                   id="email"
                   type="email"
                   autoComplete="email"
-                  className="w-full rounded-2xl border border-violet-200 bg-white px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5]"
+                  inputMode="email"
+                  className="w-full rounded-2xl border border-violet-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5]"
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading}
+                  onBlur={normalizeEmail}
+                  disabled={loadingEmail || loadingGoogle}
                 />
               </div>
 
@@ -194,11 +239,11 @@ export default function SignupPage() {
                   id="password"
                   type="password"
                   autoComplete="new-password"
-                  className="w-full rounded-2xl border border-violet-200 bg-white px-3 py-2 text-sm text-black outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5]"
+                  className="w-full rounded-2xl border border-violet-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5]"
                   placeholder="At least 6 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
+                  disabled={loadingEmail || loadingGoogle}
                 />
               </div>
 
@@ -210,10 +255,10 @@ export default function SignupPage() {
 
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full mt-1 rounded-2xl bg-[#401268] text-white text-sm font-medium py-2.5 shadow-md shadow-[#401268]/25 hover:brightness-110 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={loadingEmail || loadingGoogle}
+                className="w-full rounded-2xl bg-[#401268] text-white text-sm font-semibold py-3 shadow-md shadow-[#401268]/25 hover:brightness-110 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {loading ? "Creating your account..." : "Create account"}
+                {loadingEmail ? "Creating your account…" : "Create account"}
               </button>
             </form>
 
@@ -221,18 +266,24 @@ export default function SignupPage() {
               <p>
                 Already have an account?{" "}
                 <button
-                  onClick={() => router.push("/login")}
+                  onClick={() =>
+                    router.push(`/login?next=${encodeURIComponent(nextPath)}`)
+                  }
                   className="text-[#401268] font-medium hover:underline"
                 >
                   Log in
                 </button>
               </p>
               <p className="hidden sm:block">
-                By signing up, you agree to use Ventfreely as a{" "}
-                <span className="italic">supportive chat</span>, not a
-                replacement for professional care.
+                Ventfreely is a <span className="italic">supportive chat</span>,
+                not professional care.
               </p>
             </div>
+
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+              If you&apos;re in immediate danger or feel like you might hurt yourself,
+              contact local emergency services right now.
+            </p>
           </div>
         </section>
       </div>

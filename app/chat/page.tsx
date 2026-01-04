@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
@@ -11,8 +11,9 @@ type Message = {
 };
 
 const FREE_SECONDS = 120; // 2 minutes
+const CHAT_START_KEY = "vf_chat_start_ms"; // ✅ persists timer across refresh
 
-// Shopify checkout URL (set this to your real checkout link)
+// Shopify checkout URL (kept here for later ETAPP 2, not used in ETAPP 1 signup wall)
 const SHOPIFY_CHECKOUT_URL =
   "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
 
@@ -55,13 +56,9 @@ export default function ChatPage() {
   const isGuest = !isLoggedIn;
   const hasUnlimitedAccess = hasActiveSubscription;
 
-  // Locked, if:
-  // - user has NO active subscription AND
-  //   - is guest and free time is over, OR
-  //   - is logged in but still no subscription
-  const isLocked =
-    !hasUnlimitedAccess &&
-    ((isGuest && secondsLeft <= 0) || (!isGuest && !hasUnlimitedAccess));
+  // ✅ ETAPP 1: Signup wall after 2 minutes ONLY for guests (not checkout)
+  const showGuestTimerUI = isGuest && !hasUnlimitedAccess;
+  const showSignupWall = showGuestTimerUI && secondsLeft <= 0;
 
   // Timeline progress (0 → 100%) – only meaningful for guests
   const totalSeconds = FREE_SECONDS;
@@ -73,8 +70,6 @@ export default function ChatPage() {
   const formattedTime = `${Math.floor(secondsLeft / 60)
     .toString()
     .padStart(1, "0")}:${(secondsLeft % 60).toString().padStart(2, "0")}`;
-
-  const showGuestTimerUI = isGuest && !hasUnlimitedAccess;
 
   // 1) Check Supabase session + subscription + memory on mount
   useEffect(() => {
@@ -88,6 +83,13 @@ export default function ChatPage() {
         setUserEmail(email);
         const id = session?.user?.id ?? null;
         setUserId(id);
+
+        // ✅ If user is logged in, guest timer isn't needed anymore
+        if (session?.user) {
+          try {
+            localStorage.removeItem(CHAT_START_KEY);
+          } catch {}
+        }
 
         if (!session?.user) {
           setHasActiveSubscription(false);
@@ -135,21 +137,37 @@ export default function ChatPage() {
   }, []);
 
   // 2) Start 2-minute timer ONLY if user is guest and has no subscription
+  // ✅ refresh-proof using localStorage start time
   useEffect(() => {
     if (checkingSession) return; // wait until we know login + subscription status
     if (!showGuestTimerUI) return; // no timer for logged-in or subscribed users
 
-    setSecondsLeft(FREE_SECONDS);
-    const start = Date.now();
+    let start = Date.now();
+    try {
+      const saved = localStorage.getItem(CHAT_START_KEY);
+      if (saved && !Number.isNaN(Number(saved))) {
+        start = Number(saved);
+      } else {
+        localStorage.setItem(CHAT_START_KEY, String(start));
+      }
+    } catch {
+      // ignore localStorage issues; fallback to Date.now
+    }
 
-    const id = setInterval(() => {
+    const tick = () => {
       const elapsed = Math.floor((Date.now() - start) / 1000);
       const remaining = Math.max(FREE_SECONDS - elapsed, 0);
       setSecondsLeft(remaining);
+      return remaining;
+    };
 
-      if (remaining <= 0) {
-        clearInterval(id);
-      }
+    // Set immediately (so UI is correct on load/refresh)
+    const remainingNow = tick();
+    if (remainingNow <= 0) return;
+
+    const id = setInterval(() => {
+      const remaining = tick();
+      if (remaining <= 0) clearInterval(id);
     }, 1000);
 
     return () => clearInterval(id);
@@ -181,7 +199,8 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     if (!input.trim()) return;
-    if (isLocked || isLoadingReply) return;
+    // ✅ ETAPP 1: lock ONLY when signup wall is shown (guest after 2 min)
+    if (showSignupWall || isLoadingReply) return;
 
     setError(null);
 
@@ -222,17 +241,17 @@ export default function ChatPage() {
     }
   };
 
+  // kept for later ETAPP 2
   const handleUnlockClick = () => {
-    // Here you send user to Shopify checkout.
     window.location.href = SHOPIFY_CHECKOUT_URL;
   };
 
   const handleLoginClick = () => {
-    router.push("/login");
+    router.push("/login?next=/chat");
   };
 
   const handleSignupClick = () => {
-    router.push("/signup");
+    router.push("/signup?next=/chat");
   };
 
   const handleLogout = async () => {
@@ -241,10 +260,16 @@ export default function ChatPage() {
       setUserEmail(null);
       setUserId(null);
       setHasActiveSubscription(false);
-      setSecondsLeft(FREE_SECONDS); // start timer again as guest
+      setSecondsLeft(FREE_SECONDS);
       setMemorySummary(null);
       setMemoryLastUser(null);
       setMemoryLastAssistant(null);
+
+      // ✅ restart guest timer cleanly
+      try {
+        localStorage.removeItem(CHAT_START_KEY);
+      } catch {}
+
       router.push("/");
     } catch (err) {
       console.error("Logout error:", err);
@@ -371,7 +396,6 @@ export default function ChatPage() {
                     </div>
                   ) : (
                     <div className="py-1">
-                      {/* ✅ NEW: Account button */}
                       <button
                         onClick={() => {
                           setAccountMenuOpen(false);
@@ -414,25 +438,88 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 🔔 Floating info overlay after 2 min (only for guests) */}
-      {isLocked && isGuest && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center pointer-events-none">
-          <div className="mt-10 vf-animate-slide-down pointer-events-auto">
-            <div className="rounded-2xl shadow-2xl border border-violet-200/60 bg-white/95 backdrop-blur-md px-6 py-4 max-w-[380px] text-center">
-              <h3 className="text-sm font-semibold text-[#2A1740]">
-                Your free time has ended
-              </h3>
+      {/* ✅ BEAUTIFUL SIGNUP WALL OVERLAY after 2 min (guest only) */}
+      {showSignupWall && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
 
-              <p className="text-xs text-slate-700 mt-2 leading-relaxed">
-                To keep chatting, you’ll be taken to checkout.
-                <br />
-                After payment, you&apos;ll receive an email with a link to
-                create your Ventfreely account and activate access.
-              </p>
+          {/* Card */}
+          <div className="relative mx-4 w-full max-w-[440px]">
+            <div className="rounded-3xl border border-violet-200/70 bg-white/90 backdrop-blur-md shadow-2xl overflow-hidden">
+              {/* Top gradient header */}
+              <div className="relative px-6 pt-6 pb-5 bg-gradient-to-br from-[#401268] via-[#6B21A8] to-[#F973C9] text-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                      <span>Guest session ended</span>
+                    </div>
+                    <h3 className="mt-3 text-lg font-semibold tracking-tight">
+                      Create a free account to continue
+                    </h3>
+                    <p className="mt-1 text-[12px] text-white/90 leading-relaxed">
+                      Your chat will be saved so you don’t have to start from
+                      zero next time.
+                    </p>
+                  </div>
 
-              <div className="flex justify-center mt-3">
-                <div className="h-1.5 w-24 rounded-full bg-gradient-to-r from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4]" />
+                  <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 border border-white/15">
+                    <span className="text-xs font-semibold">VF</span>
+                  </div>
+                </div>
+
+                {/* Decorative glow */}
+                <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+                <div className="pointer-events-none absolute -left-10 -bottom-10 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
               </div>
+
+              {/* Body */}
+              <div className="px-6 py-5">
+                <div className="rounded-2xl border border-violet-200/70 bg-white px-4 py-3 text-[12px] text-slate-700">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 h-7 w-7 rounded-xl bg-gradient-to-br from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4] shadow-sm" />
+                    <div className="leading-relaxed">
+                      <div className="font-semibold text-[#2A1740]">
+                        Continue in one click
+                      </div>
+                      <div className="mt-0.5 text-slate-600">
+                        Sign up or log in to keep chatting — calm, private, and
+                        saved.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-2">
+                  <button
+                    onClick={handleSignupClick}
+                    className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-md shadow-[#401268]/25 bg-[#401268] hover:brightness-110 active:scale-[0.99] transition"
+                  >
+                    Create free account
+                  </button>
+
+                  <button
+                    onClick={handleLoginClick}
+                    className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-[#401268] bg-white border border-violet-200 hover:bg-violet-50 active:scale-[0.99] transition"
+                  >
+                    I already have an account
+                  </button>
+                </div>
+
+                <p className="mt-4 text-[10px] text-slate-500 leading-relaxed">
+                  Ventfreely is a supportive AI companion — not a therapist. If
+                  you’re in danger or feel like you might hurt yourself, contact
+                  local emergency services right now.
+                </p>
+              </div>
+            </div>
+
+            {/* Tiny bottom hint */}
+            <div className="mt-3 flex justify-center">
+              <span className="text-[10px] text-slate-500">
+                Tip: Google sign-in can be added on the signup page (STEP 2).
+              </span>
             </div>
           </div>
         </div>
@@ -450,8 +537,8 @@ export default function ChatPage() {
               </h1>
               <p className="text-xs md:text-sm text-slate-700 max-w-md">
                 A calm, anonymous space to say the things that feel heavy in
-                your head. No judgment. No pressure. Just a supportive AI
-                friend listening to you.
+                your head. No judgment. No pressure. Just a supportive AI friend
+                listening to you.
               </p>
 
               {/* Memory summary pill */}
@@ -489,13 +576,12 @@ export default function ChatPage() {
                   <p className="text-slate-700">
                     You&apos;re trying Ventfreely without an account. You have{" "}
                     <strong>{formattedTime}</strong> of free chat time left
-                    before we ask you to unlock access.
+                    before we ask you to save your conversation.
                   </p>
                 ) : (
                   <p className="text-amber-800">
-                    Your free time as a guest has ended. To keep talking, please
-                    unlock access via checkout. After payment, check your email
-                    for a link to create your Ventfreely account.
+                    Your guest time has ended. Create a free account to continue
+                    and save your chat.
                   </p>
                 )}
               </div>
@@ -503,8 +589,7 @@ export default function ChatPage() {
               <div className="space-y-1 text-[11px]">
                 <p className="text-amber-800">
                   Your account doesn&apos;t have an active Ventfreely
-                  subscription yet. To keep talking without limits, please
-                  unlock access with the same email you used here.
+                  subscription yet. (We’ll handle trial + premium in ETAPP 2.)
                 </p>
               </div>
             ) : null}
@@ -557,27 +642,26 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Paywall for guests after timer */}
-            {isLocked && isGuest && (
+            {/* ✅ Inline CTA when guest is gated (optional extra UX) */}
+            {showSignupWall && (
               <div className="space-y-2 text-[11px] border-t border-violet-200/40 pt-3">
                 <p className="text-slate-700">
-                  Your free 2-minute guest session has ended. To keep talking
-                  without time limits, you can unlock access for{" "}
-                  <strong>€2.99 / 14 days</strong>.
+                  To continue and save your chat, please create a free account.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={handleUnlockClick}
+                    onClick={handleSignupClick}
                     className="px-4 py-2 rounded-full bg-[#401268] text-white text-xs font-semibold shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition"
                   >
-                    Go to checkout · €2.99
+                    Sign up
+                  </button>
+                  <button
+                    onClick={handleLoginClick}
+                    className="px-4 py-2 rounded-full bg-white text-[#401268] border border-violet-200 text-xs font-semibold hover:bg-violet-50 active:scale-[0.98] transition"
+                  >
+                    Log in
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-500">
-                  After checkout, check your email. You&apos;ll receive a link
-                  to create your Ventfreely account with the same email you used
-                  for payment.
-                </p>
               </div>
             )}
 
@@ -586,19 +670,19 @@ export default function ChatPage() {
               <input
                 className="flex-1 rounded-full bg-white/80 border border-violet-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5] disabled:opacity-50"
                 placeholder={
-                  isLocked
-                    ? "Access is locked. Unlock Ventfreely to keep talking."
+                  showSignupWall
+                    ? "Create a free account to continue…"
                     : "Type whatever you’re thinking right now…"
                 }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={isLocked}
+                disabled={showSignupWall || isLoadingReply}
               />
               <button
                 onClick={handleSend}
                 className="px-4 py-2 rounded-full text-sm font-medium bg-[#401268] text-white hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!input.trim() || isLocked}
+                disabled={!input.trim() || showSignupWall || isLoadingReply}
               >
                 Send
               </button>
@@ -612,17 +696,15 @@ export default function ChatPage() {
                 What Ventfreely is (and isn&apos;t)
               </h2>
               <p>
-                Ventfreely is a gentle AI chat where you can talk about
-                stressful thoughts, feelings, and everyday mental load. It&apos;s
-                designed to feel like a calm friend, not a lecture.
+                Ventfreely is a gentle AI chat where you can talk about stressful
+                thoughts, feelings, and everyday mental load. It&apos;s designed
+                to feel like a calm friend, not a lecture.
               </p>
               <ul className="space-y-1 list-disc pl-4 text-xs text-slate-700">
-                <li>
-                  Anonymous by default – you don&apos;t need your real name.
-                </li>
+                <li>Anonymous by default – you don&apos;t need your real name.</li>
                 <li>Validates your feelings instead of judging them.</li>
                 <li>
-                  Short free session, then affordable access if it helps you.
+                  Short free session, then we ask you to save the conversation.
                 </li>
               </ul>
             </section>
