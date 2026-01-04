@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
@@ -37,6 +37,10 @@ export default function ChatPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
+
+  // ✅ NEW: Premium paywall UI state (for /api/chat 402)
+  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [paywallAccess, setPaywallAccess] = useState<any | null>(null);
 
   // Memory state
   const [memorySummary, setMemorySummary] = useState<string | null>(null);
@@ -173,7 +177,7 @@ export default function ChatPage() {
     return () => clearInterval(id);
   }, [checkingSession, showGuestTimerUI]);
 
-  // 3) Send messages to your /api/chat backend (with userId for memory)
+  // ✅ NEW: sendToBackend handles 402 and 401 explicitly
   const sendToBackend = async (conversation: Message[]) => {
     const payloadMessages = conversation.map((m) => ({
       role: m.role === "user" ? "user" : "assistant",
@@ -183,18 +187,27 @@ export default function ChatPage() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      // ✅ IMPORTANT: do NOT send userId anymore (server reads session cookie)
       body: JSON.stringify({
         messages: payloadMessages,
-        userId, // important: ties memory to logged-in user
       }),
     });
+
+    if (res.status === 401) {
+      return { kind: "UNAUTHORIZED" as const };
+    }
+
+    if (res.status === 402) {
+      const data = await res.json().catch(() => null);
+      return { kind: "PAYWALL" as const, access: data?.access ?? null };
+    }
 
     if (!res.ok) {
       throw new Error("Failed to get reply from server");
     }
 
     const data = await res.json();
-    return data.reply as string;
+    return { kind: "OK" as const, reply: data.reply as string };
   };
 
   const handleSend = async () => {
@@ -217,7 +230,24 @@ export default function ChatPage() {
     setIsLoadingReply(true);
 
     try {
-      const replyText = await sendToBackend(nextMessages);
+      const result = await sendToBackend(nextMessages);
+
+      // ✅ Session expired / not logged in
+      if (result.kind === "UNAUTHORIZED") {
+        setError("Your session expired. Please log in again.");
+        router.push("/login?next=/chat");
+        return;
+      }
+
+      // ✅ PAYWALL: show premium overlay (don’t show generic error)
+      if (result.kind === "PAYWALL") {
+        setPaywallAccess(result.access);
+        setPaywallOpen(true);
+        return;
+      }
+
+      // ✅ OK: show assistant reply
+      const replyText = result.reply;
       const replyMessage: Message = {
         id: Date.now() + 1,
         role: "assistant",
@@ -424,6 +454,87 @@ export default function ChatPage() {
         </div>
       </header>
 
+      {/* ✅ PREMIUM PAYWALL OVERLAY (shows when /api/chat returns 402) */}
+      {paywallOpen && !showSignupWall && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
+            onClick={() => setPaywallOpen(false)}
+          />
+          <div className="relative mx-4 w-full max-w-[460px]">
+            <div className="rounded-3xl border border-violet-200/70 bg-white/90 backdrop-blur-md shadow-2xl overflow-hidden">
+              <div className="relative px-6 pt-6 pb-5 bg-gradient-to-br from-[#401268] via-[#6B21A8] to-[#F973C9] text-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+                      <span>Premium required</span>
+                    </div>
+                    <h3 className="mt-3 text-lg font-semibold tracking-tight">
+                      Your free trial has ended
+                    </h3>
+                    <p className="mt-1 text-[12px] text-white/90 leading-relaxed">
+                      Unlock Premium to keep chatting without limits.
+                    </p>
+                  </div>
+
+                  <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 border border-white/15">
+                    <span className="text-xs font-semibold">VF</span>
+                  </div>
+                </div>
+
+                <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+                <div className="pointer-events-none absolute -left-10 -bottom-10 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+              </div>
+
+              <div className="px-6 py-5">
+                <div className="rounded-2xl border border-violet-200/70 bg-white px-4 py-3 text-[12px] text-slate-700">
+                  <div className="font-semibold text-[#2A1740]">
+                    What you get
+                  </div>
+                  <ul className="mt-1 list-disc pl-4 text-[12px] text-slate-700 space-y-1">
+                    <li>Unlimited chatting</li>
+                    <li>Your memory summary stays saved</li>
+                    <li>Supportive, calm responses</li>
+                  </ul>
+
+                  {paywallAccess?.trialEndsAt && (
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Trial ended:{" "}
+                      <span className="font-medium">
+                        {new Date(paywallAccess.trialEndsAt).toLocaleString()}
+                      </span>
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-2">
+                  <button
+                    onClick={handleUnlockClick}
+                    className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-md shadow-[#401268]/25 bg-[#401268] hover:brightness-110 active:scale-[0.99] transition"
+                  >
+                    Unlock Premium
+                  </button>
+
+                  <button
+                    onClick={() => setPaywallOpen(false)}
+                    className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-[#401268] bg-white border border-violet-200 hover:bg-violet-50 active:scale-[0.99] transition"
+                  >
+                    Not now
+                  </button>
+                </div>
+
+                <p className="mt-4 text-[10px] text-slate-500 leading-relaxed">
+                  Ventfreely is a supportive AI companion — not a therapist. If
+                  you’re in danger or feel like you might hurt yourself, contact
+                  local emergency services right now.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* YouTube-style top progress bar for guest timer */}
       {showGuestTimerUI && (
         <div className="w-full bg-[#FAF8FF]">
@@ -589,7 +700,7 @@ export default function ChatPage() {
               <div className="space-y-1 text-[11px]">
                 <p className="text-amber-800">
                   Your account doesn&apos;t have an active Ventfreely
-                  subscription yet. (We’ll handle trial + premium in ETAPP 2.)
+                  subscription yet.
                 </p>
               </div>
             ) : null}
@@ -639,29 +750,6 @@ export default function ChatPage() {
             {error && (
               <div className="text-[11px] text-amber-800 bg-amber-50/80 border border-amber-100 rounded-full px-3 py-2">
                 {error}
-              </div>
-            )}
-
-            {/* ✅ Inline CTA when guest is gated (optional extra UX) */}
-            {showSignupWall && (
-              <div className="space-y-2 text-[11px] border-t border-violet-200/40 pt-3">
-                <p className="text-slate-700">
-                  To continue and save your chat, please create a free account.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={handleSignupClick}
-                    className="px-4 py-2 rounded-full bg-[#401268] text-white text-xs font-semibold shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition"
-                  >
-                    Sign up
-                  </button>
-                  <button
-                    onClick={handleLoginClick}
-                    className="px-4 py-2 rounded-full bg-white text-[#401268] border border-violet-200 text-xs font-semibold hover:bg-violet-50 active:scale-[0.98] transition"
-                  >
-                    Log in
-                  </button>
-                </div>
               </div>
             )}
 
