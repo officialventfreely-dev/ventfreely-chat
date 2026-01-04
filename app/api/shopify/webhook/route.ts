@@ -1,122 +1,138 @@
-// app/api/shopify/webhook/route.ts
+import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseService } from "@/lib/supabaseService";
 
-export const runtime = "nodejs"; // oluline: kasutame Node crypto't (mitte Edge)
-
-function verifyShopifyHmac(rawBody: string, hmacHeader: string | null, secret: string) {
+function verifyShopifyHmac(rawBody: string, hmacHeader: string | null) {
   if (!hmacHeader) return false;
-
-  const generated = crypto
+  const secret = process.env.SHOPIFY_WEBHOOK_SECRET!;
+  const digest = crypto
     .createHmac("sha256", secret)
     .update(rawBody, "utf8")
     .digest("base64");
 
-  // timing-safe compare
-  const a = Buffer.from(generated);
-  const b = Buffer.from(hmacHeader);
-
+  const a = Buffer.from(digest, "utf8");
+  const b = Buffer.from(hmacHeader, "utf8");
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }
 
-function getNoteAttribute(order: any, key: string): string | null {
-  const attrs = order?.note_attributes;
-  if (!Array.isArray(attrs)) return null;
-  const found = attrs.find((x: any) => x?.name === key);
-  return found?.value ?? null;
-}
-
 export async function POST(req: Request) {
-  const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET!;
-  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-  // 1) loe RAW body (HMAC kontroll vajab raw teksti)
   const rawBody = await req.text();
-
-  // 2) HMAC verify
   const hmac = req.headers.get("x-shopify-hmac-sha256");
-  const topic = req.headers.get("x-shopify-topic");
-  const shopDomain = req.headers.get("x-shopify-shop-domain");
 
-  const ok = verifyShopifyHmac(rawBody, hmac, SHOPIFY_WEBHOOK_SECRET);
-  if (!ok) {
-    console.error("❌ Shopify HMAC verify failed", { topic, shopDomain });
-    return new Response("Unauthorized", { status: 401 });
+  if (!verifyShopifyHmac(rawBody, hmac)) {
+    return NextResponse.json({ error: "Invalid HMAC" }, { status: 401 });
   }
 
-  // 3) parse JSON
+  const topic = req.headers.get("x-shopify-topic") || "";
   const payload = JSON.parse(rawBody);
 
-  // Logi alati alguses — et sa näeksid Vercelis, et päring tuli kohale
-  console.log("✅ Shopify webhook received", { topic, shopDomain });
+  // idempotency: Shopify webhook unique id
+  const webhookId =
+    req.headers.get("x-shopify-webhook-id") || `${topic}:${payload?.id ?? ""}`;
 
-  // Hetkel kasutame “Order payment” (orders/paid)
-  // Shopify order payload sisaldab tavaliselt:
-  // payload.id, payload.email, payload.customer.id, payload.line_items, payload.note_attributes
-  const orderId = String(payload?.id ?? "");
-  const email = String(payload?.email ?? "");
-  const shopifyCustomerId = payload?.customer?.id ? String(payload.customer.id) : null;
+  // ✅ store webhookId so duplicates don't re-apply
+  const { data: exists, error: existsErr } = await supabaseService
+    .from("webhook_events")
+    .select("id")
+    .eq("webhook_id", webhookId)
+    .maybeSingle();
 
-  // Kui sa hakkad checkout’i külge lisama supabase_user_id, siis siit me loeme selle välja:
-  const supabaseUserId =
-    getNoteAttribute(payload, "supabase_user_id") ||
-    getNoteAttribute(payload, "user_id") ||
-    null;
+  if (existsErr) {
+    console.error("webhook_events lookup error:", existsErr);
+    // fail-safe: still return 200 to avoid infinite retries
+    return NextResponse.json({ ok: true }, { status: 200 });
+  }
 
-  console.log("📦 Order basics", { orderId, email, shopifyCustomerId, supabaseUserId });
+  if (exists?.id) {
+    // duplicate delivery → ignore
+    return NextResponse.json({ ok: true, duplicate: true }, { status: 200 });
+  }
 
-  // 4) Supabase server-side client (Service Role!)
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false },
-  });
+  const { error: insertEvtErr } = await supabaseService
+    .from("webhook_events")
+    .insert({ webhook_id: webhookId, topic });
 
-  // 5) Leia user_id
-  // Kui note_attributes ei sisalda veel supabase_user_id, proovime emailiga users_view’st leida (ajutine fallback).
-  let userIdToUse = supabaseUserId;
+  if (insertEvtErr) {
+    console.error("webhook_events insert error:", insertEvtErr);
+    return NextResponse.json({ ok: true }, { status: 200 });
+  }
 
-  if (!userIdToUse && email) {
-    const { data: userRow, error: userErr } = await supabase
+  // ✅ NOW handle your subscription updates:
+  // You said you have shopify_subscription_id in subscriptions table.
+  // Let's cover the essential lifecycle topics.
+
+  if (topic.startsWith("subscription_contracts/")) {
+    const contractId = payload?.id?.toString?.() ?? payload?.id;
+    const status = payload?.status; // active / cancelled etc (depends on payload)
+    const nextBilling = payload?.next_billing_date ?? null; // sometimes present
+
+    if (!contractId) return NextResponse.json({ ok: true }, { status: 200 });
+
+    // find row by shopify_subscription_id
+    const { data: subRow, error: subErr } = await supabaseService
+      .from("subscriptions")
+      .select("user_id, shopify_subscription_id")
+      .eq("shopify_subscription_id", String(contractId))
+      .maybeSingle();
+
+    if (subErr) console.error("subscriptions lookup error:", subErr);
+    if (!subRow?.user_id) return NextResponse.json({ ok: true }, { status: 200 });
+
+    // Decide status + period end
+    const update: any = { status: "active" };
+
+    // If we have next billing date, use it as period end, else keep existing (or set +30d as fallback)
+    if (nextBilling) update.current_period_end = new Date(nextBilling).toISOString();
+
+    // Cancel event → keep active until period end OR mark canceled immediately
+    if (topic.endsWith("/cancel") || status === "cancelled" || status === "canceled") {
+      update.status = "canceled";
+      // optional: keep current_period_end as-is (user has access until it ends)
+    }
+
+    await supabaseService
+      .from("subscriptions")
+      .update(update)
+      .eq("user_id", subRow.user_id);
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  }
+
+  // If your Shopify setup uses orders/paid instead:
+  if (topic === "orders/paid") {
+    const email: string | undefined = payload?.email || payload?.customer?.email;
+    const orderId: string | number | undefined = payload?.id;
+
+    if (!email) return NextResponse.json({ ok: true }, { status: 200 });
+
+    const { data: userRow } = await supabaseService
       .from("users_view")
-      .select("id")
+      .select("id,email")
       .eq("email", email)
       .maybeSingle();
 
-    if (userErr) {
-      console.error("❌ users_view lookup error", userErr);
-    } else {
-      userIdToUse = userRow?.id ?? null;
-    }
+    if (!userRow?.id) return NextResponse.json({ ok: true, userNotFound: true }, { status: 200 });
+
+    // fallback: +14 days
+    const days = Number(process.env.PREMIUM_DAYS_PER_PAYMENT ?? "14");
+    const end = new Date();
+    end.setDate(end.getDate() + days);
+
+    await supabaseService.from("subscriptions").upsert(
+      {
+        user_id: userRow.id,
+        status: "active",
+        current_period_end: end.toISOString(),
+        shopify_subscription_id: payload?.subscription_contract_id
+          ? String(payload.subscription_contract_id)
+          : null,
+      },
+      { onConflict: "user_id" }
+    );
+
+    return NextResponse.json({ ok: true, orderId }, { status: 200 });
   }
 
-  if (!userIdToUse) {
-    // Me EI FAILI webhooki (muidu Shopify proovib uuesti ja uuesti).
-    // Aga logime selgelt, miks subscriptions ei täitu.
-    console.warn("⚠️ No matching Supabase user. Not inserting subscription yet.", { email });
-    return new Response("OK", { status: 200 });
-  }
-
-  // 6) Insert/Upsert subscriptions tabelisse
-  // Sinu tabelis on: user_id, shopify_subscription_id, status, current_period_end
-  // Kuna meil on “Order payment”, paneme status=active ja shopify_subscription_id=orderId (praegu).
-  const { error: subErr } = await supabase.from("subscriptions").upsert(
-    {
-      user_id: userIdToUse,
-      shopify_subscription_id: orderId,
-      status: "active",
-      current_period_end: null, // hiljem saad siia panna perioodi lõpu, kui hakkad subscription contracts infot võtma
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" } // soovitan user_id teha UNIQUE (allpool SQL)
-  );
-
-  if (subErr) {
-    console.error("❌ subscriptions upsert failed", subErr);
-    return new Response("OK", { status: 200 }); // jälle: Shopify ei tohi retry loopi minna
-  }
-
-  console.log("✅ Subscription row upserted for user", { userIdToUse });
-
-  return new Response("OK", { status: 200 });
+  return NextResponse.json({ ok: true, ignored: topic }, { status: 200 });
 }
