@@ -25,16 +25,19 @@ export async function ensureTrialAndCheckAccess(
   supabaseSession: SupabaseClient,
   userId: string
 ): Promise<AccessResult> {
-  // Read current subscription row (session client)
-  const { data: subRow, error: subErr } = await supabaseSession
+  // ✅ Read MOST RECENT subscription row (session client)
+  const { data: subRows, error: subErr } = await supabaseSession
     .from("subscriptions")
-    .select("user_id, status, current_period_end, trial_ends_at")
+    .select("user_id, status, current_period_end, trial_ends_at, updated_at")
     .eq("user_id", userId)
-    .maybeSingle();
+    .order("updated_at", { ascending: false })
+    .limit(1);
 
   if (subErr) {
     console.error("ensureTrialAndCheckAccess: read subscription error:", subErr);
   }
+
+  const subRow = subRows?.[0] ?? null;
 
   // If no row -> create row + start trial (ADMIN / service role)
   if (!subRow) {
@@ -48,7 +51,7 @@ export async function ensureTrialAndCheckAccess(
 
     if (insErr) {
       console.error("ensureTrialAndCheckAccess: insert trial row error:", insErr);
-      // Fail-safe: if insert fails, deny access (safer than free access)
+      // Fail-safe: if insert fails, deny access
       return {
         hasAccess: false,
         reason: "trial_expired",
@@ -67,8 +70,6 @@ export async function ensureTrialAndCheckAccess(
     };
   }
 
-  const now = new Date();
-
   const rawStatus = (subRow.status as string | null) ?? null;
   const status = (rawStatus ?? "").toLowerCase();
 
@@ -76,8 +77,6 @@ export async function ensureTrialAndCheckAccess(
 
   // --- PREMIUM LOGIC (FIXED) ---
   // Shopify active subscriptions may have current_period_end = NULL.
-  // Treat as premium if status is active/trialing AND
-  // (current_period_end is in the future OR is null).
   const isCanceled =
     status === "canceled" ||
     status === "cancelled" ||
@@ -87,10 +86,11 @@ export async function ensureTrialAndCheckAccess(
   const premiumStatusOk = status === "active" || status === "trialing";
 
   const premiumActive =
-    !isCanceled && premiumStatusOk && (premiumUntil === null || isFuture(premiumUntil));
+    !isCanceled &&
+    premiumStatusOk &&
+    (premiumUntil === null || isFuture(premiumUntil));
 
   if (premiumActive) {
-    // We still keep trialEndsAt in response, but premium wins
     return {
       hasAccess: true,
       reason: "premium_active",
@@ -105,18 +105,17 @@ export async function ensureTrialAndCheckAccess(
 
   if (!trialEndsAt) {
     trialEndsAt = addDaysISO(3);
+
     const { error: updErr } = await supabaseService
       .from("subscriptions")
       .update({
         trial_ends_at: trialEndsAt,
-        // keep status if it exists, else set to trial
         status: rawStatus ?? "trial",
       })
       .eq("user_id", userId);
 
     if (updErr) {
       console.error("ensureTrialAndCheckAccess: set trial_ends_at error:", updErr);
-      // If we can't set it, deny access (safer)
       return {
         hasAccess: false,
         reason: "trial_expired",
