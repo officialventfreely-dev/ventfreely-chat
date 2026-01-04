@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { supabaseService } from "@/lib/supabaseService";
 
 type AccessResult = {
   hasAccess: boolean;
-  reason: "ok" | "trial_active" | "premium_active" | "trial_expired" | "no_subscription_row";
+  reason: "trial_active" | "premium_active" | "trial_expired";
   trialEndsAt: string | null;
   premiumUntil: string | null;
   status: string | null;
@@ -15,44 +16,25 @@ function addDaysISO(days: number) {
 }
 
 export async function ensureTrialAndCheckAccess(
-  supabase: SupabaseClient,
+  supabaseSession: SupabaseClient,
   userId: string
 ): Promise<AccessResult> {
-  const { data: subRow, error } = await supabase
+  // Read current subscription row (session client)
+  const { data: subRow } = await supabaseSession
     .from("subscriptions")
-    .select("id, user_id, status, current_period_end, trial_ends_at")
+    .select("user_id, status, current_period_end, trial_ends_at")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (error) {
-    return {
-      hasAccess: false,
-      reason: "no_subscription_row",
-      trialEndsAt: null,
-      premiumUntil: null,
-      status: null,
-    };
-  }
-
-  // if no row yet -> create it + start trial
+  // If no row -> create row + start trial (ADMIN / service role)
   if (!subRow) {
     const trialEndsAt = addDaysISO(3);
 
-    const { error: insErr } = await supabase.from("subscriptions").insert({
+    await supabaseService.from("subscriptions").insert({
       user_id: userId,
       status: "trial",
       trial_ends_at: trialEndsAt,
     });
-
-    if (insErr) {
-      return {
-        hasAccess: false,
-        reason: "no_subscription_row",
-        trialEndsAt: null,
-        premiumUntil: null,
-        status: null,
-      };
-    }
 
     return {
       hasAccess: true,
@@ -63,11 +45,11 @@ export async function ensureTrialAndCheckAccess(
     };
   }
 
-  // ensure trial_ends_at exists once
-  let trialEndsAt = subRow.trial_ends_at as string | null;
+  // Ensure trial_ends_at exists once (ADMIN)
+  let trialEndsAt = (subRow.trial_ends_at as string | null) ?? null;
   if (!trialEndsAt) {
     trialEndsAt = addDaysISO(3);
-    await supabase
+    await supabaseService
       .from("subscriptions")
       .update({ trial_ends_at: trialEndsAt, status: subRow.status ?? "trial" })
       .eq("user_id", userId);
@@ -75,10 +57,8 @@ export async function ensureTrialAndCheckAccess(
 
   const now = new Date();
 
-  const trialActive = trialEndsAt ? new Date(trialEndsAt) > now : false;
-
-  const status = (subRow.status ?? "").toLowerCase();
-  const premiumUntil = subRow.current_period_end as string | null;
+  const status = ((subRow.status ?? "") as string).toLowerCase();
+  const premiumUntil = (subRow.current_period_end as string | null) ?? null;
 
   const premiumActive =
     (status === "active" || status === "trialing") &&
@@ -94,6 +74,8 @@ export async function ensureTrialAndCheckAccess(
       status: subRow.status ?? null,
     };
   }
+
+  const trialActive = trialEndsAt ? new Date(trialEndsAt) > now : false;
 
   if (trialActive) {
     return {
