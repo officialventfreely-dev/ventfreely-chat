@@ -1,38 +1,37 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../../lib/supabaseBrowser";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function handleAuthCallback() {
       try {
-        // 🔐 Important: this completes the OAuth flow
+        // ✅ read next from URL safely (no useSearchParams -> no prerender crash)
+        const params = new URLSearchParams(window.location.search);
+        const next = params.get("next");
+        const nextPath = next && next.startsWith("/") ? next : "/chat";
+
+        // 🔐 Finish OAuth session
         const {
           data: { session },
-          error,
+          error: sessionError,
         } = await supabaseBrowser.auth.getSession();
 
-        if (error || !session) {
+        if (sessionError || !session) {
           setError(
-            error?.message ??
+            sessionError?.message ??
               "We couldn’t complete the login. Please try again."
           );
           return;
         }
 
-        // ✅ Read ?next=/chat (default to /chat)
-        const next = searchParams.get("next");
-        const nextPath =
-          next && next.startsWith("/") ? next : "/chat";
-
-        // 🔁 Redirect user back
         router.replace(nextPath);
       } catch (err) {
         console.error("Auth callback error:", err);
@@ -41,7 +40,7 @@ export default function AuthCallbackPage() {
     }
 
     handleAuthCallback();
-  }, [router, searchParams]);
+  }, [router]);
 
   return (
     <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center px-4">
@@ -73,7 +72,7 @@ export default function AuthCallbackPage() {
             <p className="mt-2 text-sm text-slate-700">{error}</p>
 
             <button
-              onClick={() => router.replace("/login")}
+              onClick={() => router.replace("/login?next=/chat")}
               className="mt-4 rounded-2xl bg-[#401268] px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition"
             >
               Back to login
