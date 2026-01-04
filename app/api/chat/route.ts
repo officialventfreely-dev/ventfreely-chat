@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { supabaseService } from "@/lib/supabaseService";
+import { ensureTrialAndCheckAccess } from "@/lib/access";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -25,13 +26,29 @@ export async function POST(req: NextRequest) {
       | { role: "user" | "assistant"; content: string }[]
       | undefined;
 
-    // userId tuleb front-endist kaasa (Supabase user.id), et saaks mäluga seostada
+    // ⚠️ userId tuleb front-endist kaasa (Supabase user.id)
+    // ETAPP 2.3 jaoks kasutame seda, aga kontrollime ligipääsu serveris subscriptions tabelist.
     const userId = (body?.userId as string | undefined) ?? null;
+
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
         { error: "No messages provided" },
         { status: 400 }
+      );
+    }
+
+    // ✅ ETAPP 2.3: Access check + auto-start 3-day trial
+    const access = await ensureTrialAndCheckAccess(supabaseService, userId);
+
+    if (!access.hasAccess) {
+      // Ära kutsu OpenAI-d kui pole ligipääsu
+      return NextResponse.json(
+        { error: "PAYWALL", access },
+        { status: 402 }
       );
     }
 
@@ -74,21 +91,16 @@ When the user talks about **self-harm, suicide, or harming others**:
   - Encourage them to reach out to a trusted friend, family member, or another safe person.
   - If they have access to mental health professionals or local helplines, suggest contacting them.
 - Make it clear: you are an AI with limitations and **cannot** handle emergencies or keep them safe in real time.
-- Example style (adapted to the user’s language, never copy verbatim):
-  - “I’m really glad you shared this with me. Because your safety is so important, this is something that needs real-time human support. If you feel you might hurt yourself or someone else, please contact your local emergency number or a crisis line, or reach out to someone you trust as soon as you can. I’m limited as an AI and I can’t act in the real world, but you deserve support from people who can be there with you.”
 
 When the user asks for **medical or diagnostic advice**:
-- Do **not** diagnose.
-- Do **not** recommend specific medications, doses, or treatment plans.
-- You can:
-  - Encourage them to talk to a doctor, nurse, therapist, or other licensed professional.
-  - Help them prepare questions to ask a professional.
-  - Talk about general wellbeing (sleep, routine, self-care) in a very cautious, non-authoritative way.
+- Do not diagnose.
+- Do not recommend specific medications, doses, or treatment plans.
+- Encourage them to talk to a licensed professional.
 - Clearly say you are not a medical professional.
 
 When the user asks for **illegal, hateful, or clearly harmful things**:
 - Politely refuse to help with anything illegal, violent, abusive, or hateful.
-- You can gently shift the conversation toward underlying feelings (anger, fear, hurt) and explore healthier ways to cope or respond.
+- Gently shift toward underlying feelings and healthier coping.
 
 Tone:
 - Warm, gentle, non-judgmental.
