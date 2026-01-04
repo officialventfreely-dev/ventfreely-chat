@@ -2,31 +2,32 @@
 
 export const dynamic = "force-dynamic";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
 export default function SignupPage() {
   const router = useRouter();
 
-  // ✅ runtime query parsing (no useSearchParams -> no prerender crash)
+  // ✅ runtime query parsing (no window usage during render)
   const [nextPath, setNextPath] = useState("/chat");
   const [fromCheckout, setFromCheckout] = useState(false);
+  const [oauthRedirectTo, setOauthRedirectTo] = useState<string>("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
 
     const n = params.get("next");
-    if (n && n.startsWith("/")) setNextPath(n);
+    const safeNext = n && n.startsWith("/") ? n : "/chat";
+    setNextPath(safeNext);
 
     setFromCheckout(params.get("from") === "checkout");
-  }, []);
 
-  // ✅ used for Google OAuth redirect
-  const oauthRedirectTo = useMemo(() => {
     const origin = window.location.origin;
-    return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
-  }, [nextPath]);
+    setOauthRedirectTo(
+      `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
+    );
+  }, []);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,11 +93,15 @@ export default function SignupPage() {
     setError(null);
     setLoadingGoogle(true);
 
+    if (!oauthRedirectTo) {
+      setLoadingGoogle(false);
+      setError("Please try again in a moment.");
+      return;
+    }
+
     const { error } = await supabaseBrowser.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: oauthRedirectTo,
-      },
+      options: { redirectTo: oauthRedirectTo },
     });
 
     if (error) {
