@@ -15,7 +15,10 @@ function mutationFor(topic: string, callbackUrl: string) {
     mutation {
       webhookSubscriptionCreate(
         topic: ${topic}
-        webhookSubscription: { callbackUrl: "${callbackUrl}", format: JSON }
+        webhookSubscription: {
+          callbackUrl: "${callbackUrl}"
+          format: JSON
+        }
       ) {
         webhookSubscription { id }
         userErrors { field message }
@@ -28,71 +31,60 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const secret = searchParams.get("secret");
 
+  // 🔐 kaitse setup URL-ile
   if (!secret || secret !== process.env.SHOPIFY_WEBHOOK_SETUP_SECRET) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  const shop = process.env.SHOPIFY_SHOP_DOMAIN || "";
-  const callbackUrl = process.env.SHOPIFY_WEBHOOK_CALLBACK_URL || "";
+  const callbackUrl = process.env.SHOPIFY_WEBHOOK_CALLBACK_URL;
   const apiVersion = process.env.SHOPIFY_ADMIN_API_VERSION || "2026-01";
 
-  if (!shop || !callbackUrl) {
+  if (!callbackUrl) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Missing env",
-        shop,
-        callbackUrl,
-        apiVersion,
-      },
+      { ok: false, error: "Missing SHOPIFY_WEBHOOK_CALLBACK_URL" },
       { status: 500 }
     );
   }
 
-  // ✅ ÄRA kasuta .single() — see tekitas su errori
+  // 🚀 KIIRLAHENDUS:
+  // võta LIHTSALT UUSIM Shopify token Supabase'ist
   const { data: tokenRows, error: tokenErr } = await supabaseAdmin
     .from("shopify_tokens")
     .select("shop, access_token, updated_at")
-    .ilike("shop", shop)
     .order("updated_at", { ascending: false })
-    .limit(5);
+    .limit(1);
 
-  if (tokenErr) {
-    return NextResponse.json(
-      { ok: false, error: "Supabase query error", details: tokenErr.message, shopLookingFor: shop },
-      { status: 500 }
-    );
-  }
-
-  const tokenRow = tokenRows?.[0];
-
-  if (!tokenRow?.access_token) {
+  if (tokenErr || !tokenRows || tokenRows.length === 0) {
     return NextResponse.json(
       {
         ok: false,
-        error: "No token found for shop",
-        shopLookingFor: shop,
-        foundRowsCount: tokenRows?.length ?? 0,
-        foundShops: (tokenRows ?? []).map(r => r.shop),
+        error: "No Shopify token found at all",
+        details: tokenErr?.message,
       },
       { status: 500 }
     );
   }
 
+  const tokenRow = tokenRows[0];
   const accessToken = tokenRow.access_token;
+  const shop = tokenRow.shop; // ← kasutame seda shopi, mille token on
 
   const results: any[] = [];
+
   for (const topic of TOPICS) {
     const query = mutationFor(topic, callbackUrl);
 
-    const r = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": accessToken,
-      },
-      body: JSON.stringify({ query }),
-    });
+    const r = await fetch(
+      `https://${shop}/admin/api/${apiVersion}/graphql.json`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": accessToken,
+        },
+        body: JSON.stringify({ query }),
+      }
+    );
 
     const json = await r.json();
     const create = json?.data?.webhookSubscriptionCreate;
@@ -109,7 +101,6 @@ export async function GET(req: Request) {
     ok: true,
     shopUsed: shop,
     callbackUrlUsed: callbackUrl,
-    tokenShopMatched: tokenRow.shop,
     results,
   });
 }
