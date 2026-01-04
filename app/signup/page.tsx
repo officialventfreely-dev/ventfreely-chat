@@ -1,29 +1,32 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
 export default function SignupPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
-  // ✅ support both: ?from=checkout and ?next=/chat
-  const nextPath = useMemo(() => {
-    const n = searchParams.get("next");
-    if (!n) return "/chat";
-    return n.startsWith("/") ? n : "/chat";
-  }, [searchParams]);
+  // ✅ runtime query parsing (no useSearchParams -> no prerender crash)
+  const [nextPath, setNextPath] = useState("/chat");
+  const [fromCheckout, setFromCheckout] = useState(false);
 
-  const fromCheckout = useMemo(() => {
-    return searchParams.get("from") === "checkout";
-  }, [searchParams]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    const n = params.get("next");
+    if (n && n.startsWith("/")) setNextPath(n);
+
+    setFromCheckout(params.get("from") === "checkout");
+  }, []);
 
   // ✅ used for Google OAuth redirect
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const oauthRedirectTo = origin
-    ? `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`
-    : "";
+  const oauthRedirectTo = useMemo(() => {
+    const origin = window.location.origin;
+    return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
+  }, [nextPath]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,7 +34,6 @@ export default function SignupPage() {
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Optional: normalize email on blur
   const normalizeEmail = () => setEmail((v) => v.trim().toLowerCase());
 
   const handleSubmit = async (e: FormEvent) => {
@@ -133,12 +135,12 @@ export default function SignupPage() {
             </h1>
 
             <p className="text-sm text-violet-50/90 max-w-md">
-              Your account lets you come back to the same safe space whenever
-              you need it. Log in and continue without starting from zero.
+              Save your chat, come back anytime, and continue without starting
+              from zero.
             </p>
 
             <ul className="space-y-1 text-xs text-violet-50/90">
-              <li>• Continue your saved conversations.</li>
+              <li>• Continue saved conversations.</li>
               <li>• Access from any device when logged in.</li>
               <li>• A calm place to unload heavy thoughts.</li>
             </ul>
@@ -173,8 +175,9 @@ export default function SignupPage() {
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-[11px] text-emerald-800 mb-1">
                 <p className="font-medium">Payment confirmed 💜</p>
                 <p className="mt-1 leading-relaxed">
-                  Please create your account using the <strong>same email</strong>{" "}
-                  you used at checkout, so we can link your access.
+                  Please create your account using the{" "}
+                  <strong>same email</strong> you used at checkout, so we can
+                  link your access.
                 </p>
               </div>
             )}

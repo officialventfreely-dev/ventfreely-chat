@@ -1,27 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+export const dynamic = "force-dynamic";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
-  // ✅ support ?next=/chat so we can return user to where they came from
-  const nextPath = useMemo(() => {
-    const n = searchParams.get("next");
-    if (!n) return "/chat";
-    // basic safety: only allow internal paths
-    return n.startsWith("/") ? n : "/chat";
-  }, [searchParams]);
+  // ✅ next path read from URL at runtime (no useSearchParams => no prerender crash)
+  const [nextPath, setNextPath] = useState("/chat");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const n = params.get("next");
+    if (n && n.startsWith("/")) setNextPath(n);
+  }, []);
 
   // ✅ used for Google OAuth redirect
-  const origin =
-    typeof window !== "undefined" ? window.location.origin : "";
-  const oauthRedirectTo = origin
-    ? `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`
-    : "";
+  const oauthRedirectTo = useMemo(() => {
+    const origin = window.location.origin;
+    return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
+  }, [nextPath]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -61,7 +62,6 @@ export default function LoginPage() {
       },
     });
 
-    // If this succeeds, browser navigates away to Google. If it fails, show error.
     if (error) {
       setLoadingGoogle(false);
       setError(error.message);
@@ -87,7 +87,6 @@ export default function LoginPage() {
 
           {/* Card */}
           <div className="rounded-3xl bg-white/90 backdrop-blur-md shadow-xl border border-violet-200/60 overflow-hidden">
-            {/* Accent top */}
             <div className="h-2 bg-gradient-to-r from-[#401268] via-[#A268F5] to-[#F973C9]" />
 
             <div className="p-6">
@@ -131,7 +130,7 @@ export default function LoginPage() {
                   </label>
                   <input
                     type="password"
-                    className="w-full rounded-2xl border border-violet-200 px-3 py-2.5 text-sm bg-white text-slate-900 outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5]"
+                    className="w-full rounded-2xl border border-violet-200 px-3 py-2.5 text-sm bg-white text-slate-900"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -155,7 +154,6 @@ export default function LoginPage() {
                 </button>
               </form>
 
-              {/* Footer */}
               <p className="mt-4 text-[12px] text-slate-600">
                 Don&apos;t have an account yet?{" "}
                 <a
@@ -167,17 +165,11 @@ export default function LoginPage() {
               </p>
 
               <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
-                By continuing, you agree Ventfreely is an AI companion — not a
-                therapist. If you&apos;re in immediate danger, contact local
-                emergency services.
+                You’ll return to{" "}
+                <span className="font-semibold">{nextPath}</span> after logging
+                in.
               </p>
             </div>
-          </div>
-
-          {/* Tiny hint */}
-          <div className="mt-4 text-center text-[10px] text-slate-500">
-            You’ll return to <span className="font-semibold">{nextPath}</span>{" "}
-            after logging in.
           </div>
         </div>
       </div>
