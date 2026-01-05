@@ -7,6 +7,9 @@ import Image from "next/image";
 import { Montserrat, Oswald, Barlow_Condensed } from "next/font/google";
 import { EMOTIONS, ENERGIES, type Emotion, type Energy } from "@/lib/dailyConfig";
 
+const CHECKOUT_URL =
+  "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfX1lEc8TNBb/en-ee?_r=AQABKeCP8HYH1psvfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
+
 const bodyFont = Montserrat({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
@@ -179,6 +182,7 @@ export default function DailyPage() {
 
   useEffect(() => {
     let mounted = true;
+
     (async () => {
       try {
         setLoading(true);
@@ -300,15 +304,15 @@ export default function DailyPage() {
         />
       </div>
 
-      {/* Header */}
+      {/* Header (smaller ~2x, same as Home) */}
       <header className="w-full bg-[#401268]">
-        <div className="mx-auto flex max-w-5xl items-center justify-center px-4 py-2.5">
+        <div className="mx-auto flex max-w-5xl items-center justify-center px-4 py-1.5">
           <Link href="/" className="flex items-center justify-center">
             <Image
               src="/brand/logo.svg"
               alt="Ventfreely"
-              width={116}
-              height={32}
+              width={92}
+              height={24}
               priority
               className="opacity-95"
             />
@@ -338,7 +342,10 @@ export default function DailyPage() {
 
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
               <div
-                className={["h-full rounded-full transition-all duration-500", progressClass].join(" ")}
+                className={[
+                  "h-full rounded-full transition-all duration-500",
+                  progressClass,
+                ].join(" ")}
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
@@ -349,11 +356,11 @@ export default function DailyPage() {
             </p>
           </div>
 
-          {/* Gate states (Simplicity: 1 clean card) */}
+          {/* Gate states */}
           {!loading && gate === "unauthorized" && (
             <SimpleCard
               title="LOG IN TO SAVE"
-              text="You can still read the page, but saving your reflection requires an account."
+              text="Saving your reflection requires an account."
               primaryHref="/login"
               primaryText="Log in"
               secondaryHref="/signup"
@@ -365,7 +372,7 @@ export default function DailyPage() {
             <SimpleCard
               title="PREMIUM REQUIRED"
               text="Daily reflections are part of Premium."
-              primaryHref="/"
+              primaryHref={CHECKOUT_URL}
               primaryText="Unlock Premium"
               secondaryHref="/"
               secondaryText="Back home"
@@ -387,23 +394,32 @@ export default function DailyPage() {
               <p className="text-[13px] text-white/70">Loading…</p>
             </div>
           ) : gate === "ok" && completed ? (
-            <div className="mt-10 text-left">
+            <div className="mx-auto mt-10 max-w-xl text-left">
               <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
                 <p
                   className="text-[12px] text-white/60"
-                  style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+                  style={{
+                    fontFamily: "var(--font-subheading)",
+                    letterSpacing: "0.08em",
+                  }}
                 >
                   COMPLETED TODAY ✅
                 </p>
 
-                <p className="mt-2 text-[15px] text-white/90">“{existing.positive_text}”</p>
+                <p className="mt-2 text-[15px] text-white/90">
+                  “{existing.positive_text}”
+                </p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Tag>
-                    {EMOTION_CHOICES.find((c) => c.value === existing.emotion)?.emoji} {existing.emotion}
+                    {EMOTION_CHOICES.find((c) => c.value === existing.emotion)
+                      ?.emoji}{" "}
+                    {existing.emotion}
                   </Tag>
                   <Tag>
-                    {ENERGY_CHOICES.find((c) => c.value === existing.energy)?.emoji} {existing.energy}
+                    {ENERGY_CHOICES.find((c) => c.value === existing.energy)
+                      ?.emoji}{" "}
+                    {existing.energy}
                   </Tag>
                 </div>
 
@@ -467,7 +483,9 @@ export default function DailyPage() {
                     ].join(" ")}
                     maxLength={500}
                   />
-                  <p className="mt-2 text-[11px] text-white/50">{text.trim().length}/500</p>
+                  <p className="mt-2 text-[11px] text-white/50">
+                    {text.trim().length}/500
+                  </p>
                 </div>
               </div>
 
@@ -492,56 +510,60 @@ export default function DailyPage() {
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                  {EMOTION_CHOICES.filter((c) => (EMOTIONS as readonly string[]).includes(c.value)).map(
-                    ({ value, emoji, label, sub, accent, glow }) => {
-                      const selected = emotion === value;
-                      const depth = clamp(12, 10, 18);
+                  {EMOTION_CHOICES.filter((c) =>
+                    (EMOTIONS as readonly string[]).includes(c.value)
+                  ).map(({ value, emoji, label, sub, accent, glow }) => {
+                    const selected = emotion === value;
+                    const depth = clamp(12, 10, 18);
 
-                      return (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => handlePickEmotion(value)}
-                          aria-pressed={selected}
-                          className={[
-                            "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
-                            "focus:outline-none focus:ring-2 focus:ring-white/30",
-                            "active:scale-[0.99]",
-                            selected
-                              ? `border-white/70 bg-white/10 ${glow}`
-                              : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
-                          ].join(" ")}
-                          style={{
-                            fontFamily: "var(--font-subheading)",
-                            boxShadow: selected ? undefined : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-2xl leading-none">{emoji}</span>
-                            <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                              pick
-                            </span>
-                          </div>
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => handlePickEmotion(value)}
+                        aria-pressed={selected}
+                        className={[
+                          "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
+                          "focus:outline-none focus:ring-2 focus:ring-white/30",
+                          "active:scale-[0.99]",
+                          selected
+                            ? `border-white/70 bg-white/10 ${glow}`
+                            : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
+                        ].join(" ")}
+                        style={{
+                          fontFamily: "var(--font-subheading)",
+                          boxShadow: selected
+                            ? undefined
+                            : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-2xl leading-none">{emoji}</span>
+                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                            pick
+                          </span>
+                        </div>
 
-                          <div className="mt-2">
-                            <div className="text-[13px] font-semibold text-white">{label}</div>
-                            <div className="text-[11px] text-white/60">{sub}</div>
+                        <div className="mt-2">
+                          <div className="text-[13px] font-semibold text-white">
+                            {label}
                           </div>
+                          <div className="text-[11px] text-white/60">{sub}</div>
+                        </div>
 
-                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                            <div
-                              className={[
-                                "h-full rounded-full transition-all duration-300",
-                                accent,
-                                selected ? "opacity-100" : "opacity-70",
-                              ].join(" ")}
-                              style={{ width: selected ? "100%" : "55%" }}
-                            />
-                          </div>
-                        </button>
-                      );
-                    }
-                  )}
+                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className={[
+                              "h-full rounded-full transition-all duration-300",
+                              accent,
+                              selected ? "opacity-100" : "opacity-70",
+                            ].join(" ")}
+                            style={{ width: selected ? "100%" : "55%" }}
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="h-px bg-white/10" />
@@ -568,56 +590,60 @@ export default function DailyPage() {
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                  {ENERGY_CHOICES.filter((c) => (ENERGIES as readonly string[]).includes(c.value)).map(
-                    ({ value, emoji, label, sub, accent, glow, pct }) => {
-                      const selected = energy === value;
-                      const depth = clamp(12, 10, 18);
+                  {ENERGY_CHOICES.filter((c) =>
+                    (ENERGIES as readonly string[]).includes(c.value)
+                  ).map(({ value, emoji, label, sub, accent, glow, pct }) => {
+                    const selected = energy === value;
+                    const depth = clamp(12, 10, 18);
 
-                      return (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => handlePickEnergy(value)}
-                          aria-pressed={selected}
-                          className={[
-                            "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
-                            "focus:outline-none focus:ring-2 focus:ring-white/30",
-                            "active:scale-[0.99]",
-                            selected
-                              ? `border-white/70 bg-white/10 ${glow}`
-                              : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
-                          ].join(" ")}
-                          style={{
-                            fontFamily: "var(--font-subheading)",
-                            boxShadow: selected ? undefined : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-2xl leading-none">{emoji}</span>
-                            <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                              {pct}%
-                            </span>
-                          </div>
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => handlePickEnergy(value)}
+                        aria-pressed={selected}
+                        className={[
+                          "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
+                          "focus:outline-none focus:ring-2 focus:ring-white/30",
+                          "active:scale-[0.99]",
+                          selected
+                            ? `border-white/70 bg-white/10 ${glow}`
+                            : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
+                        ].join(" ")}
+                        style={{
+                          fontFamily: "var(--font-subheading)",
+                          boxShadow: selected
+                            ? undefined
+                            : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-2xl leading-none">{emoji}</span>
+                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                            {pct}%
+                          </span>
+                        </div>
 
-                          <div className="mt-2">
-                            <div className="text-[13px] font-semibold text-white">{label}</div>
-                            <div className="text-[11px] text-white/60">{sub}</div>
+                        <div className="mt-2">
+                          <div className="text-[13px] font-semibold text-white">
+                            {label}
                           </div>
+                          <div className="text-[11px] text-white/60">{sub}</div>
+                        </div>
 
-                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                            <div
-                              className={[
-                                "h-full rounded-full transition-all duration-300",
-                                accent,
-                                selected ? "opacity-100" : "opacity-70",
-                              ].join(" ")}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </button>
-                      );
-                    }
-                  )}
+                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className={[
+                              "h-full rounded-full transition-all duration-300",
+                              accent,
+                              selected ? "opacity-100" : "opacity-70",
+                            ].join(" ")}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="h-px bg-white/10" />
