@@ -2,149 +2,236 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
+import { Montserrat, Oswald, Barlow_Condensed } from "next/font/google";
+
+const bodyFont = Montserrat({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-body",
+});
+
+const subheadingFont = Oswald({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-subheading",
+});
+
+const headingFont = Barlow_Condensed({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-heading",
+});
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen w-full bg-[#FAF8FF] text-slate-900">
-      {/* Header */}
-      <header className="w-full bg-[#401268] text-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-              <span className="text-xs font-semibold tracking-tight">
-                VF
-              </span>
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span className="text-sm font-semibold tracking-tight">
-                Ventfreely
-              </span>
-              <span className="text-[11px] text-violet-100/80">
-                Gentle space to vent, not a therapist
-              </span>
-            </div>
-          </div>
+    <main
+      className={[
+        "min-h-screen w-full",
+        bodyFont.variable,
+        subheadingFont.variable,
+        headingFont.variable,
+      ].join(" ")}
+      style={{ fontFamily: "var(--font-body)", color: "white" }}
+    >
+      {/* Background (same as /test) */}
+      <div className="fixed inset-0 -z-10">
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(900px 500px at 50% 0%, rgba(255,255,255,0.08), transparent 60%), linear-gradient(180deg, #0B1634 0%, #07102A 55%, #061027 100%)",
+          }}
+        />
+      </div>
 
-          <div className="flex items-center gap-2 text-[11px] text-violet-100/90">
-            <span className="hidden sm:inline">Anonymous · 24/7</span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-              Online
-            </span>
-          </div>
+      {/* Header (same vibe as /test) */}
+      <header className="w-full bg-[#401268]">
+        <div className="mx-auto flex max-w-5xl items-center justify-center px-4 py-2.5">
+          <Link href="/" className="flex items-center justify-center">
+            <Image
+              src="/brand/logo.svg"
+              alt="Ventfreely"
+              width={116}
+              height={32}
+              priority
+              className="opacity-95"
+            />
+          </Link>
         </div>
       </header>
 
       {/* Content */}
-      <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-10 space-y-10">
-        {/* Hero */}
-        <section className="space-y-4 pt-2 border-b border-violet-200/40 pb-8">
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-[#2A1740]">
-            You&apos;re not alone with your thoughts.
+      <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
+        <section className="mx-auto max-w-xl text-center">
+          <h1
+            className="text-5xl font-semibold md:text-6xl"
+            style={{
+              fontFamily: "var(--font-heading)",
+              letterSpacing: "0.02em",
+            }}
+          >
+            SIMPLICITY
+            <span className="block">WHEN YOU NEED IT MOST</span>
           </h1>
-          <p className="text-sm md:text-base text-slate-700 max-w-2xl">
-            Ventfreely is a calm, anonymous place to say what&apos;s really on
-            your mind – without worrying how it sounds. No judgment. No
-            pressure. Just a gentle AI companion listening to you.
+
+          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/85">
+            Ventfreely is a calm, anonymous place to let your thoughts out.
+            No judgement. No pressure. Just a gentle AI companion listening.
           </p>
 
-          <div className="flex flex-col gap-2 mt-2 sm:flex-row sm:items-center">
+          {/* Primary actions */}
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
             <Link
               href="/test"
-              className="inline-flex w-full items-center justify-center rounded-full bg-[#401268] px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition sm:w-auto"
+              className={[
+                "inline-flex w-full items-center justify-center rounded-full px-6 py-4",
+                "bg-white text-[#0B1634] transition",
+                "hover:brightness-95 active:scale-[0.99]",
+                "sm:w-auto",
+              ].join(" ")}
+              style={{
+                fontFamily: "var(--font-subheading)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
             >
-              Take a quick emotional test
+              Take the quick test
             </Link>
+
             <Link
               href="/chat"
-              className="inline-flex w-full items-center justify-center rounded-full border border-[#401268]/20 bg-white/40 px-5 py-3 text-sm font-medium text-[#401268] hover:bg-white/70 transition sm:w-auto"
+              className={[
+                "inline-flex w-full items-center justify-center rounded-full px-6 py-4",
+                "border border-white/20 bg-white/10 text-white transition",
+                "hover:bg-white/15 active:scale-[0.99]",
+                "sm:w-auto",
+              ].join(" ")}
+              style={{
+                fontFamily: "var(--font-subheading)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
             >
-              Skip test – start chatting
+              Start chatting
             </Link>
           </div>
 
-          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
-            <div className="inline-flex items-center gap-1 rounded-full bg-white/60 px-3 py-1">
-              <span>⏱</span>
-              <span>Starts in under a minute</span>
-            </div>
-            <div className="inline-flex items-center gap-1 rounded-full bg-white/60 px-3 py-1">
-              <span>🫶</span>
-              <span>No real name needed</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Preview */}
-        <section className="space-y-3 border-b border-violet-200/40 pb-8">
-          <div className="flex items-center justify-between text-[11px] text-slate-600">
-            <span className="inline-flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
-              Example conversation
+          {/* Minimal trust badges */}
+          <div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2 text-[11px] text-white/70">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1">
+              <span>⏱</span> under 1 minute
             </span>
-            <span>Anonymous · not real data</span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1">
+              <span>🫶</span> no real name
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1">
+              <span>🕊</span> gentle tone
+            </span>
           </div>
 
-          <div className="space-y-2 text-[11px] leading-relaxed">
-            <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-2xl rounded-bl-[1.6rem] bg-white/80 px-3 py-2 text-slate-900">
-                “My mind feels heavy lately. I keep overthinking everything and
-                I&apos;m tired.”
-              </div>
+          {/* Example (keep it short, simplicity) */}
+          <div className="mt-10 text-left">
+            <div className="flex items-center justify-between text-[11px] text-white/60">
+              <span className="inline-flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
+                Example (not real data)
+              </span>
+              <span>Anonymous</span>
             </div>
-            <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl rounded-br-[1.6rem] bg-[#401268] px-3 py-2 text-white">
-                It makes sense that you feel drained when your thoughts are
-                that loud. You don&apos;t have to tidy them up here – you can
-                just let them out as they are.
+
+            <div className="mt-3 space-y-2 text-[11px] leading-relaxed">
+              <div className="flex justify-start">
+                <div className="max-w-[80%] rounded-2xl rounded-bl-[1.6rem] border border-white/10 bg-white/10 px-3 py-2 text-white/90">
+                  “My mind feels heavy lately. I keep overthinking everything.”
+                </div>
               </div>
-            </div>
-            <div className="flex justify-start">
-              <div className="max-w-[75%] rounded-2xl rounded-bl-[1.6rem] bg-white/80 px-3 py-2 text-slate-900">
-                You&apos;re not too much, and you&apos;re not alone. You&apos;re
-                allowed to take up space with how you feel.
+
+              <div className="flex justify-end">
+                <div className="max-w-[80%] rounded-2xl rounded-br-[1.6rem] bg-white px-3 py-2 text-[#0B1634]">
+                  That makes sense. You don’t have to tidy your thoughts here —
+                  you can just let them out as they are.
+                </div>
+              </div>
+
+              <div className="flex justify-start">
+                <div className="max-w-[75%] rounded-2xl rounded-bl-[1.6rem] border border-white/10 bg-white/10 px-3 py-2 text-white/90">
+                  You’re allowed to take up space with how you feel.
+                </div>
               </div>
             </div>
           </div>
-        </section>
 
-        {/* How it works */}
-        <section className="space-y-4 pb-6">
-          <h2 className="text-sm font-semibold text-[#2A1740]">
-            How Ventfreely works
-          </h2>
+          {/* How it works (kept ultra simple) */}
+          <div className="mt-10 text-left">
+            <h2
+              className="text-sm text-white/80"
+              style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+            >
+              HOW IT WORKS
+            </h2>
 
-          <div className="grid gap-4 md:grid-cols-3 text-xs text-slate-700">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold text-[#401268]">
-                1 · Quick emotional check-in
-              </p>
-              <p>
-                Answer a few simple questions to see how heavy things feel for
-                you right now.
-              </p>
+            <div className="mt-3 grid gap-3 text-[12px] text-white/80 md:grid-cols-3">
+              <StepCard title="1 · Quick check-in">
+                Answer a few questions to see how heavy things feel right now.
+              </StepCard>
+              <StepCard title="2 · Vent safely">
+                Say what you’ve been holding. Ventfreely responds gently.
+              </StepCard>
+              <StepCard title="3 · Keep it simple">
+                Try it. If it helps, unlock more time for a small fee.
+              </StepCard>
             </div>
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold text-[#401268]">
-                2 · Start venting safely
-              </p>
-              <p>
-                Say the thoughts you keep in your head. Ventfreely responds
-                gently, helping you slow everything down.
-              </p>
+
+            {/* Optional: daily CTA, still simple */}
+            <div className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p
+                    className="text-[12px] text-white/60"
+                    style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+                  >
+                    DAILY REFLECTION
+                  </p>
+                  <p className="mt-1 text-[14px] text-white/85">
+                    One good moment. One emotion. One energy. Done.
+                  </p>
+                </div>
+
+                <Link
+                  href="/daily"
+                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99]"
+                  style={{
+                    fontFamily: "var(--font-subheading)",
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Open daily
+                </Link>
+              </div>
             </div>
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold text-[#401268]">
-                3 · Decide if it helps you
-              </p>
-              <p>
-                Try a few free messages. If it feels supportive, you can unlock
-                more time for a small fee.
-              </p>
-            </div>
+
+            <p className="mt-6 text-[11px] text-white/45">
+              Ventfreely is not a therapist or a diagnosis. It’s a gentle space to vent.
+            </p>
           </div>
         </section>
       </div>
     </main>
+  );
+}
+
+function StepCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-3xl border border-white/15 bg-white/5 p-4">
+      <p
+        className="text-[11px] font-semibold text-white/85"
+        style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+      >
+        {title}
+      </p>
+      <p className="mt-1 text-[12px] leading-relaxed text-white/70">{children}</p>
+    </div>
   );
 }
