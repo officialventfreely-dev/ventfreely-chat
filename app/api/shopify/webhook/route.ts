@@ -20,12 +20,17 @@ function verifyShopifyHmac(rawBody: string, hmacHeader: string | null) {
   return crypto.timingSafeEqual(a, b);
 }
 
+function addDaysISO(days: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
 function pickEmail(payload: any): string | null {
   const candidates = [
     payload?.email,
     payload?.customer?.email,
     payload?.contact_email,
-    payload?.billing_address?.email,
     payload?.customer_email,
   ]
     .filter(Boolean)
@@ -35,31 +40,21 @@ function pickEmail(payload: any): string | null {
 }
 
 async function findUserIdByEmail(email: string): Promise<string | null> {
-  // 1) users_view (you used it previously)
-  try {
-    const { data, error } = await supabaseService
-      .from("users_view")
-      .select("id,email")
-      .eq("email", email)
-      .maybeSingle();
+  // preferred
+  const { data: uv } = await supabaseService
+    .from("users_view")
+    .select("id,email")
+    .eq("email", email)
+    .maybeSingle();
+  if (uv?.id) return uv.id as string;
 
-    if (!error && data?.id) return data.id as string;
-  } catch (e) {
-    console.error("[shopify-webhook] users_view lookup exception:", e);
-  }
-
-  // 2) profiles fallback (many Supabase apps store email here)
-  try {
-    const { data, error } = await supabaseService
-      .from("profiles")
-      .select("id,email")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (!error && data?.id) return data.id as string;
-  } catch (e) {
-    console.error("[shopify-webhook] profiles lookup exception:", e);
-  }
+  // fallback
+  const { data: prof } = await supabaseService
+    .from("profiles")
+    .select("id,email")
+    .eq("email", email)
+    .maybeSingle();
+  if (prof?.id) return prof.id as string;
 
   return null;
 }
@@ -82,11 +77,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid HMAC" }, { status: 401 });
   }
 
-  let payload: any = null;
+  let payload: any;
   try {
     payload = JSON.parse(rawBody);
-  } catch (e) {
-    console.error("[shopify-webhook] Invalid JSON", e);
+  } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
@@ -94,49 +88,26 @@ export async function POST(req: Request) {
     req.headers.get("x-shopify-webhook-id") ||
     `${topic}:${payload?.id ?? "no-id"}`;
 
-  console.log("[shopify-webhook] received", {
-    topic,
-    webhookId,
-    payloadId: payload?.id ?? null,
-  });
+  // idempotency
+  const { data: exists } = await supabaseService
+    .from("webhook_events")
+    .select("id")
+    .eq("webhook_id", webhookId)
+    .maybeSingle();
 
-  // Idempotency: store webhook event once
-  try {
-    const { data: exists, error: existsErr } = await supabaseService
-      .from("webhook_events")
-      .select("id")
-      .eq("webhook_id", webhookId)
-      .maybeSingle();
-
-    if (existsErr) {
-      console.error("[shopify-webhook] webhook_events lookup error:", existsErr);
-      return NextResponse.json({ ok: true }, { status: 200 });
-    }
-
-    if (exists?.id) {
-      console.log("[shopify-webhook] duplicate ignored", { webhookId });
-      return NextResponse.json({ ok: true, duplicate: true }, { status: 200 });
-    }
-
-    const { error: insertEvtErr } = await supabaseService
-      .from("webhook_events")
-      .insert({ webhook_id: webhookId, topic });
-
-    if (insertEvtErr) {
-      console.error("[shopify-webhook] webhook_events insert error:", insertEvtErr);
-      return NextResponse.json({ ok: true }, { status: 200 });
-    }
-  } catch (e) {
-    console.error("[shopify-webhook] webhook_events exception:", e);
-    return NextResponse.json({ ok: true }, { status: 200 });
+  if (exists?.id) {
+    return NextResponse.json({ ok: true, duplicate: true });
   }
 
-  // ---- orders/paid -> activate subscription ----
+  await supabaseService.from("webhook_events").insert({
+    webhook_id: webhookId,
+    topic,
+  });
+
+  // ---- ORDERS/PAID -> 14 days premium ----
   if (topic === "orders/paid") {
     const email = pickEmail(payload);
     const orderId = payload?.id ?? null;
-
-    console.log("[shopify-webhook] orders/paid", { orderId, email });
 
     if (!email) {
       console.warn("[shopify-webhook] orders/paid missing email", { orderId });
@@ -146,47 +117,38 @@ export async function POST(req: Request) {
     const userId = await findUserIdByEmail(email);
 
     if (!userId) {
-      console.warn("[shopify-webhook] user NOT found by email", { email, orderId });
+      console.warn("[shopify-webhook] user not found for email", { email, orderId });
       return NextResponse.json({ ok: true, userNotFound: true }, { status: 200 });
     }
 
-    // NOTE: this is a temporary, order-based premium activation.
-    // Later we’ll do real subscription_contracts webhooks (cancel/expire).
     const days = Number(process.env.PREMIUM_DAYS_PER_PAYMENT ?? "14");
-    const end = new Date();
-    end.setDate(end.getDate() + days);
-
-    const upsertPayload: any = {
-      user_id: userId,
-      status: "active",
-      current_period_end: end.toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    // If your subscriptions table has these columns, it’s useful:
-    // (won’t break if they don’t exist? -> it WILL break if column missing)
-    // so we only add them if you confirm columns exist.
-    // upsertPayload.shopify_order_id = String(orderId);
+    const currentPeriodEnd = addDaysISO(days);
 
     const { error: upsertErr } = await supabaseService
       .from("subscriptions")
-      .upsert(upsertPayload, { onConflict: "user_id" });
+      .upsert(
+        {
+          user_id: userId,
+          status: "active",
+          current_period_end: currentPeriodEnd,
+          // leave trial_ends_at as-is (no need to wipe)
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
 
     if (upsertErr) {
-      console.error("[shopify-webhook] subscriptions upsert ERROR:", {
-        message: upsertErr.message,
-        details: (upsertErr as any).details,
-        hint: (upsertErr as any).hint,
-        code: (upsertErr as any).code,
-        payload: upsertPayload,
-      });
+      console.error("[shopify-webhook] subscriptions upsert failed", upsertErr);
       return NextResponse.json({ ok: true, subUpsertFailed: true }, { status: 200 });
     }
 
-    console.log("[shopify-webhook] PREMIUM ACTIVATED", { userId, email, orderId });
-    return NextResponse.json({ ok: true }, { status: 200 });
+    console.log("[shopify-webhook] PREMIUM 14D ACTIVATED", {
+      userId,
+      email,
+      orderId,
+      currentPeriodEnd,
+    });
   }
 
-  // ignore other topics for now
-  return NextResponse.json({ ok: true, ignored: topic }, { status: 200 });
+  return NextResponse.json({ ok: true }, { status: 200 });
 }
