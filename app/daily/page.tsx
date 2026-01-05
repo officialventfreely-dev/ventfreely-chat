@@ -36,6 +36,8 @@ type ReflectionRow = {
   created_at: string;
 };
 
+type GateState = "ok" | "unauthorized" | "paywall" | "error";
+
 const EMOTION_CHOICES = [
   {
     value: "Grateful" as const,
@@ -134,22 +136,20 @@ export default function DailyPage() {
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // tiny “focus pulse” like /test
   const [focusBlock, setFocusBlock] = useState<"emotion" | "energy" | null>(null);
-
-  // progress tone for top bar (based on last selection)
   const [progressTone, setProgressTone] = useState<"emotion" | "energy" | null>(null);
+
+  const [gate, setGate] = useState<GateState>("ok");
 
   const emotionRef = useRef<HTMLDivElement | null>(null);
   const energyRef = useRef<HTMLDivElement | null>(null);
   const doneRef = useRef<HTMLDivElement | null>(null);
 
   const canSubmit = useMemo(() => {
-    return text.trim().length >= 3 && !!emotion && !!energy && !saving;
-  }, [text, emotion, energy, saving]);
+    return text.trim().length >= 3 && !!emotion && !!energy && !saving && gate === "ok";
+  }, [text, emotion, energy, saving, gate]);
 
   const progressPercent = useMemo(() => {
-    // 3 steps: text, emotion, energy
     const a = text.trim().length >= 3 ? 1 : 0;
     const b = emotion ? 1 : 0;
     const c = energy ? 1 : 0;
@@ -157,14 +157,15 @@ export default function DailyPage() {
   }, [text, emotion, energy]);
 
   const progressHint = useMemo(() => {
+    if (gate === "unauthorized") return "Log in to save your reflection.";
+    if (gate === "paywall") return "Premium unlock required.";
     if (text.trim().length < 3) return "Write one good moment 👇";
     if (!emotion) return "Pick an emotion 👇";
     if (!energy) return "Pick your energy 👇";
     return "All set. Save it 👇";
-  }, [text, emotion, energy]);
+  }, [gate, text, emotion, energy]);
 
   const progressClass = useMemo(() => {
-    // pick a color based on last selection block
     if (progressTone === "emotion" && emotion) {
       const match = EMOTION_CHOICES.find((c) => c.value === emotion);
       return match?.progress ?? "bg-white/70";
@@ -182,23 +183,30 @@ export default function DailyPage() {
       try {
         setLoading(true);
         const res = await fetch("/api/daily/today", { cache: "no-store" });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
 
         if (!mounted) return;
 
+        if (res.status === 401) {
+          setGate("unauthorized");
+          setLoading(false);
+          return;
+        }
+        if (res.status === 402) {
+          setGate("paywall");
+          setLoading(false);
+          return;
+        }
         if (!res.ok) {
-          // show a simple message but keep style
-          setToday("");
-          setExisting(null);
-          setSubmitted(false);
+          setGate("error");
+          setLoading(false);
           return;
         }
 
+        setGate("ok");
         setToday(data.today ?? "");
         setExisting(data.reflection ?? null);
         setSubmitted(!!data.reflection);
-
-        // if already completed, show it cleanly
       } finally {
         if (mounted) setLoading(false);
       }
@@ -213,7 +221,6 @@ export default function DailyPage() {
     setEmotion(val);
     setProgressTone("emotion");
 
-    // scroll/pulse next block
     requestAnimationFrame(() => {
       setFocusBlock("energy");
       window.setTimeout(() => setFocusBlock(null), 650);
@@ -244,10 +251,17 @@ export default function DailyPage() {
         }),
       });
 
-      const data = await res.json();
+      if (res.status === 401) {
+        setGate("unauthorized");
+        return;
+      }
+      if (res.status === 402) {
+        setGate("paywall");
+        return;
+      }
 
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // keep it simple: no giant error UI
         alert(data?.error ?? "Could not save.");
         return;
       }
@@ -302,38 +316,29 @@ export default function DailyPage() {
         </div>
       </header>
 
-      {/* Content */}
       <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
         <section className="mx-auto max-w-xl text-center">
           <h1
             className="text-5xl font-semibold md:text-6xl"
-            style={{
-              fontFamily: "var(--font-heading)",
-              letterSpacing: "0.02em",
-            }}
+            style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
           >
             DAILY REFLECTION
           </h1>
 
           <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/85">
-            One minute. One good moment from today. That’s it.
+            One minute. One good moment. That’s it.
           </p>
 
           {/* Progress */}
           <div className="mx-auto mt-6 max-w-xl">
             <div className="flex items-center justify-between text-[12px] text-white/70">
-              <span style={{ fontFamily: "var(--font-subheading)" }}>
-                Progress
-              </span>
+              <span style={{ fontFamily: "var(--font-subheading)" }}>Progress</span>
               <span className="text-white/70">{progressPercent}%</span>
             </div>
 
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
               <div
-                className={[
-                  "h-full rounded-full transition-all duration-500",
-                  progressClass,
-                ].join(" ")}
+                className={["h-full rounded-full transition-all duration-500", progressClass].join(" ")}
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
@@ -344,46 +349,61 @@ export default function DailyPage() {
             </p>
           </div>
 
-          {/* Already completed */}
+          {/* Gate states (Simplicity: 1 clean card) */}
+          {!loading && gate === "unauthorized" && (
+            <SimpleCard
+              title="LOG IN TO SAVE"
+              text="You can still read the page, but saving your reflection requires an account."
+              primaryHref="/login"
+              primaryText="Log in"
+              secondaryHref="/signup"
+              secondaryText="Create account"
+            />
+          )}
+
+          {!loading && gate === "paywall" && (
+            <SimpleCard
+              title="PREMIUM REQUIRED"
+              text="Daily reflections are part of Premium."
+              primaryHref="/"
+              primaryText="Unlock Premium"
+              secondaryHref="/"
+              secondaryText="Back home"
+            />
+          )}
+
+          {!loading && gate === "error" && (
+            <SimpleCard
+              title="SOMETHING WENT WRONG"
+              text="Please try again in a moment."
+              primaryHref="/"
+              primaryText="Back home"
+            />
+          )}
+
+          {/* Completed */}
           {loading ? (
             <div className="mt-10 rounded-3xl border border-white/15 bg-white/5 p-6 text-left">
               <p className="text-[13px] text-white/70">Loading…</p>
             </div>
-          ) : completed ? (
+          ) : gate === "ok" && completed ? (
             <div className="mt-10 text-left">
               <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p
-                      className="text-[12px] text-white/60"
-                      style={{ fontFamily: "var(--font-subheading)" }}
-                    >
-                      COMPLETED TODAY ✅
-                    </p>
-                    <p className="mt-2 text-[15px] text-white/90">
-                      “{existing.positive_text}”
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[11px] text-white/50">Date</p>
-                    <p className="text-[12px] text-white/80">{existing.date}</p>
-                  </div>
-                </div>
+                <p
+                  className="text-[12px] text-white/60"
+                  style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+                >
+                  COMPLETED TODAY ✅
+                </p>
+
+                <p className="mt-2 text-[15px] text-white/90">“{existing.positive_text}”</p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Tag>
-                    {
-                      EMOTION_CHOICES.find((c) => c.value === existing.emotion)
-                        ?.emoji
-                    }{" "}
-                    {existing.emotion}
+                    {EMOTION_CHOICES.find((c) => c.value === existing.emotion)?.emoji} {existing.emotion}
                   </Tag>
                   <Tag>
-                    {
-                      ENERGY_CHOICES.find((c) => c.value === existing.energy)
-                        ?.emoji
-                    }{" "}
-                    {existing.energy}
+                    {ENERGY_CHOICES.find((c) => c.value === existing.energy)?.emoji} {existing.energy}
                   </Tag>
                 </div>
 
@@ -420,10 +440,10 @@ export default function DailyPage() {
                 </Link>
               </div>
             </div>
-          ) : (
+          ) : gate === "ok" ? (
             // Form
             <div className="mt-10 text-left">
-              {/* Step 1: Text */}
+              {/* Step 1 */}
               <div className="rounded-3xl border border-white/15 bg-white/5 p-4">
                 <p className="text-[14px] text-white/90">
                   <span
@@ -447,13 +467,11 @@ export default function DailyPage() {
                     ].join(" ")}
                     maxLength={500}
                   />
-                  <p className="mt-2 text-[11px] text-white/50">
-                    {text.trim().length}/500
-                  </p>
+                  <p className="mt-2 text-[11px] text-white/50">{text.trim().length}/500</p>
                 </div>
               </div>
 
-              {/* Step 2: Emotion */}
+              {/* Step 2 */}
               <div
                 ref={emotionRef}
                 className={[
@@ -474,67 +492,62 @@ export default function DailyPage() {
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                  {EMOTION_CHOICES.filter((c) =>
-                    (EMOTIONS as readonly string[]).includes(c.value)
-                  ).map(({ value, emoji, label, sub, accent, glow }) => {
-                    const selected = emotion === value;
+                  {EMOTION_CHOICES.filter((c) => (EMOTIONS as readonly string[]).includes(c.value)).map(
+                    ({ value, emoji, label, sub, accent, glow }) => {
+                      const selected = emotion === value;
+                      const depth = clamp(12, 10, 18);
 
-                    const depth = clamp(12, 10, 18);
-
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => handlePickEmotion(value)}
-                        aria-pressed={selected}
-                        className={[
-                          "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
-                          "focus:outline-none focus:ring-2 focus:ring-white/30",
-                          "active:scale-[0.99]",
-                          selected
-                            ? `border-white/70 bg-white/10 ${glow}`
-                            : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
-                        ].join(" ")}
-                        style={{
-                          fontFamily: "var(--font-subheading)",
-                          boxShadow: selected
-                            ? undefined
-                            : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-2xl leading-none">{emoji}</span>
-                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                            pick
-                          </span>
-                        </div>
-
-                        <div className="mt-2">
-                          <div className="text-[13px] font-semibold text-white">
-                            {label}
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => handlePickEmotion(value)}
+                          aria-pressed={selected}
+                          className={[
+                            "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
+                            "focus:outline-none focus:ring-2 focus:ring-white/30",
+                            "active:scale-[0.99]",
+                            selected
+                              ? `border-white/70 bg-white/10 ${glow}`
+                              : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
+                          ].join(" ")}
+                          style={{
+                            fontFamily: "var(--font-subheading)",
+                            boxShadow: selected ? undefined : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-2xl leading-none">{emoji}</span>
+                            <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                              pick
+                            </span>
                           </div>
-                          <div className="text-[11px] text-white/60">{sub}</div>
-                        </div>
 
-                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className={[
-                              "h-full rounded-full transition-all duration-300",
-                              accent,
-                              selected ? "opacity-100" : "opacity-70",
-                            ].join(" ")}
-                            style={{ width: selected ? "100%" : "55%" }}
-                          />
-                        </div>
-                      </button>
-                    );
-                  })}
+                          <div className="mt-2">
+                            <div className="text-[13px] font-semibold text-white">{label}</div>
+                            <div className="text-[11px] text-white/60">{sub}</div>
+                          </div>
+
+                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className={[
+                                "h-full rounded-full transition-all duration-300",
+                                accent,
+                                selected ? "opacity-100" : "opacity-70",
+                              ].join(" ")}
+                              style={{ width: selected ? "100%" : "55%" }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    }
+                  )}
                 </div>
 
                 <div className="h-px bg-white/10" />
               </div>
 
-              {/* Step 3: Energy */}
+              {/* Step 3 */}
               <div
                 ref={energyRef}
                 className={[
@@ -555,60 +568,56 @@ export default function DailyPage() {
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                  {ENERGY_CHOICES.filter((c) =>
-                    (ENERGIES as readonly string[]).includes(c.value)
-                  ).map(({ value, emoji, label, sub, accent, glow, pct }) => {
-                    const selected = energy === value;
-                    const depth = clamp(12, 10, 18);
+                  {ENERGY_CHOICES.filter((c) => (ENERGIES as readonly string[]).includes(c.value)).map(
+                    ({ value, emoji, label, sub, accent, glow, pct }) => {
+                      const selected = energy === value;
+                      const depth = clamp(12, 10, 18);
 
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => handlePickEnergy(value)}
-                        aria-pressed={selected}
-                        className={[
-                          "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
-                          "focus:outline-none focus:ring-2 focus:ring-white/30",
-                          "active:scale-[0.99]",
-                          selected
-                            ? `border-white/70 bg-white/10 ${glow}`
-                            : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
-                        ].join(" ")}
-                        style={{
-                          fontFamily: "var(--font-subheading)",
-                          boxShadow: selected
-                            ? undefined
-                            : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-2xl leading-none">{emoji}</span>
-                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                            {pct}%
-                          </span>
-                        </div>
-
-                        <div className="mt-2">
-                          <div className="text-[13px] font-semibold text-white">
-                            {label}
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => handlePickEnergy(value)}
+                          aria-pressed={selected}
+                          className={[
+                            "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
+                            "focus:outline-none focus:ring-2 focus:ring-white/30",
+                            "active:scale-[0.99]",
+                            selected
+                              ? `border-white/70 bg-white/10 ${glow}`
+                              : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
+                          ].join(" ")}
+                          style={{
+                            fontFamily: "var(--font-subheading)",
+                            boxShadow: selected ? undefined : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-2xl leading-none">{emoji}</span>
+                            <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                              {pct}%
+                            </span>
                           </div>
-                          <div className="text-[11px] text-white/60">{sub}</div>
-                        </div>
 
-                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className={[
-                              "h-full rounded-full transition-all duration-300",
-                              accent,
-                              selected ? "opacity-100" : "opacity-70",
-                            ].join(" ")}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </button>
-                    );
-                  })}
+                          <div className="mt-2">
+                            <div className="text-[13px] font-semibold text-white">{label}</div>
+                            <div className="text-[11px] text-white/60">{sub}</div>
+                          </div>
+
+                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className={[
+                                "h-full rounded-full transition-all duration-300",
+                                accent,
+                                selected ? "opacity-100" : "opacity-70",
+                              ].join(" ")}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    }
+                  )}
                 </div>
 
                 <div className="h-px bg-white/10" />
@@ -645,13 +654,11 @@ export default function DailyPage() {
                   <Link href="/" className="text-[12px] text-white/70 hover:text-white">
                     Back home
                   </Link>
-                  <span className="text-[11px] text-white/45">
-                    Simplicity wins.
-                  </span>
+                  <span className="text-[11px] text-white/45">Simplicity wins.</span>
                 </div>
               </div>
             </div>
-          )}
+          ) : null}
         </section>
       </div>
     </main>
@@ -663,5 +670,63 @@ function Tag({ children }: { children: React.ReactNode }) {
     <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[12px] text-white/85">
       {children}
     </span>
+  );
+}
+
+function SimpleCard({
+  title,
+  text,
+  primaryHref,
+  primaryText,
+  secondaryHref,
+  secondaryText,
+}: {
+  title: string;
+  text: string;
+  primaryHref: string;
+  primaryText: string;
+  secondaryHref?: string;
+  secondaryText?: string;
+}) {
+  return (
+    <div className="mt-10 text-left">
+      <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          {title}
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">{text}</p>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href={primaryHref}
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            {primaryText}
+          </Link>
+
+          {secondaryHref && secondaryText ? (
+            <Link
+              href={secondaryHref}
+              className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-4 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+              style={{
+                fontFamily: "var(--font-subheading)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              {secondaryText}
+            </Link>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
