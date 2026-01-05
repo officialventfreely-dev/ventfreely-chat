@@ -16,6 +16,53 @@ const FREQUENCY_PENALTY = 0;
 
 const SUMMARY_MAX_TOKENS = 200;
 
+/**
+ * ETAPP 4.1 – User memory (light, safe)
+ * We store only patterns, not full chat text.
+ */
+type UserMemoryRow = {
+  dominant_emotions: string[] | null;
+  recurring_themes: string[] | null;
+  preferred_tone: string | null; // e.g. "calm" | "reflective" | "supportive"
+  energy_pattern: string | null; // e.g. "low_evenings" | "fluctuating" | "stable"
+};
+
+function buildMemoryBlock(memory: UserMemoryRow | null) {
+  if (!memory) return "";
+
+  const lines: string[] = [];
+
+  if (memory.dominant_emotions?.length) {
+    lines.push(
+      `- Emotions that often appear: ${memory.dominant_emotions.join(", ")}`
+    );
+  }
+
+  if (memory.recurring_themes?.length) {
+    lines.push(`- Recurring themes: ${memory.recurring_themes.join(", ")}`);
+  }
+
+  if (memory.preferred_tone) {
+    lines.push(`- Preferred tone: ${memory.preferred_tone}`);
+  }
+
+  if (memory.energy_pattern) {
+    lines.push(`- Energy pattern: ${memory.energy_pattern}`);
+  }
+
+  if (!lines.length) return "";
+
+  return `
+Known user patterns (private):
+${lines.join("\n")}
+
+Rules for using patterns:
+- Don't mention these patterns unless it helps the user feel understood.
+- Never label, diagnose, or claim certainty.
+- Prefer gentle reflection over advice.
+`.trim();
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -45,6 +92,22 @@ export async function POST(req: NextRequest) {
 
     const userId = user.id;
 
+    // ✅ ETAPP 4.1: fetch user_memory (RLS protected)
+    let memory: UserMemoryRow | null = null;
+    try {
+      const { data, error } = await supabase
+        .from("user_memory")
+        .select(
+          "dominant_emotions, recurring_themes, preferred_tone, energy_pattern"
+        )
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (!error) memory = (data as UserMemoryRow) ?? null;
+    } catch (e) {
+      console.error("Failed to fetch user_memory:", e);
+    }
+
     // ✅ ETAPP 2.3: access check
     const access = await ensureTrialAndCheckAccess(supabase, userId);
 
@@ -56,8 +119,10 @@ export async function POST(req: NextRequest) {
       .reverse()
       .find((m) => m.role === "user")?.content;
 
+    const memoryBlock = buildMemoryBlock(memory);
+
     const systemPrompt = `
-You are **Ventfreely**, a calm and supportive AI friend in a mental-health style chat.
+You are Ventfreely, a calm and supportive AI friend in a mental-health style chat.
 
 Rules:
 - Not a therapist/doctor/lawyer.
@@ -65,6 +130,8 @@ Rules:
 - No self-harm/violence/illegal instructions.
 - Warm, calm, short responses.
 - Reply in the same language as the user.
+
+${memoryBlock ? `\n${memoryBlock}\n` : ""}
     `.trim();
 
     const openAiMessages = [
