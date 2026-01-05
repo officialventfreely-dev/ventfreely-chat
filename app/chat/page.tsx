@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { useRouter, usePathname } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
 
 type Message = {
@@ -11,22 +13,77 @@ type Message = {
 };
 
 const FREE_SECONDS = 120; // 2 minutes
-const CHAT_START_KEY = "vf_chat_start_ms"; // ✅ persists timer across refresh
+const CHAT_START_KEY = "vf_chat_start_ms";
 
-// Shopify checkout URL (kept here for later ETAPP 2, not used in ETAPP 1 signup wall)
+// kept for later ETAPP 2
 const SHOPIFY_CHECKOUT_URL =
   "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
 
+/** tiny inline icons (no extra packages needed) */
+function IconUser(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={props.className ?? "h-4 w-4"}
+      fill="none"
+    >
+      <path
+        d="M20 21a8 8 0 0 0-16 0"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12 13a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 13Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconMenu(props: { open: boolean; className?: string }) {
+  // hamburger / X
+  return props.open ? (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={props.className ?? "h-4 w-4"}
+      fill="none"
+    >
+      <path
+        d="M6 6l12 12M18 6L6 18"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  ) : (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={props.className ?? "h-4 w-4"}
+      fill="none"
+    >
+      <path
+        d="M5 7h14M5 12h14M5 17h14"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function ChatPage() {
   const router = useRouter();
+  const pathname = usePathname();
 
   // Chat state
   const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      role: "assistant",
-      text: "Hey. You can vent about to me. What’s on your mind?",
-    },
+    { id: 1, role: "assistant", text: "Hey. You can vent to me. What’s on your mind?" },
   ]);
   const [userId, setUserId] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -38,44 +95,53 @@ export default function ChatPage() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
 
-  // ✅ NEW: Premium paywall UI state (for /api/chat 402)
+  // Premium paywall UI state (for /api/chat 402)
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [paywallAccess, setPaywallAccess] = useState<any | null>(null);
 
   // Memory state
   const [memorySummary, setMemorySummary] = useState<string | null>(null);
-  const [memoryLastUser, setMemoryLastUser] = useState<string | null>(null);
-  const [memoryLastAssistant, setMemoryLastAssistant] = useState<string | null>(
-    null
-  );
   const [isClearingMemory, setIsClearingMemory] = useState(false);
 
   // Timer for anonymous users
   const [secondsLeft, setSecondsLeft] = useState(FREE_SECONDS);
 
-  // UI: account dropdown menu
+  // UI state
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const isLoggedIn = !!userEmail;
-  const isGuest = !isLoggedIn;
-  const hasUnlimitedAccess = hasActiveSubscription;
-
-  // ✅ ETAPP 1: Signup wall after 2 minutes ONLY for guests (not checkout)
-  const showGuestTimerUI = isGuest && !hasUnlimitedAccess;
+  const showGuestTimerUI = !isLoggedIn && !hasActiveSubscription;
   const showSignupWall = showGuestTimerUI && secondsLeft <= 0;
 
-  // Timeline progress (0 → 100%) – only meaningful for guests
-  const totalSeconds = FREE_SECONDS;
-  const usedSeconds = Math.min(totalSeconds - secondsLeft, totalSeconds);
-  const progressPercent =
-    totalSeconds > 0 ? (usedSeconds / totalSeconds) * 100 : 0;
-
-  // Format timer mm:ss
   const formattedTime = `${Math.floor(secondsLeft / 60)
     .toString()
     .padStart(1, "0")}:${(secondsLeft % 60).toString().padStart(2, "0")}`;
 
-  // 1) Check Supabase session + subscription + memory on mount
+  const navItems = useMemo(
+    () => [
+      { href: "/", label: "Home" },
+      { href: "/test", label: "Test" },
+      { href: "/chat", label: "Chat" },
+      { href: "/daily", label: "Daily" },
+      { href: "/weekly", label: "Weekly" },
+    ],
+    []
+  );
+
+  const isActive = (href: string) => {
+    if (!pathname) return false;
+    if (href === "/") return pathname === "/";
+    return pathname.startsWith(href);
+  };
+
+  // Close menus on route change
+  useEffect(() => {
+    setAccountMenuOpen(false);
+    setMobileNavOpen(false);
+  }, [pathname]);
+
+  // 1) Check session + subscription + memory on mount
   useEffect(() => {
     async function loadSessionAndSubscription() {
       try {
@@ -88,7 +154,6 @@ export default function ChatPage() {
         const id = session?.user?.id ?? null;
         setUserId(id);
 
-        // ✅ If user is logged in, guest timer isn't needed anymore
         if (session?.user) {
           try {
             localStorage.removeItem(CHAT_START_KEY);
@@ -100,7 +165,7 @@ export default function ChatPage() {
           return;
         }
 
-        // Check subscriptions table for active subscription
+        // Check subscriptions (same as your old code)
         const { data: subs, error: subsError } = await supabaseBrowser
           .from("subscriptions")
           .select("status,current_period_end")
@@ -109,16 +174,12 @@ export default function ChatPage() {
           .gt("current_period_end", new Date().toISOString())
           .limit(1);
 
-        if (!subsError && subs && subs.length > 0) {
-          setHasActiveSubscription(true);
-        } else {
-          setHasActiveSubscription(false);
-        }
+        setHasActiveSubscription(!subsError && !!subs && subs.length > 0);
 
-        // Load last memory summary + last messages
+        // Load last memory summary
         const { data: convs, error: convError } = await supabaseBrowser
           .from("conversations")
-          .select("summary, last_user_message, last_assistant_message")
+          .select("summary")
           .eq("user_id", session.user.id)
           .eq("is_deleted", false)
           .order("created_at", { ascending: false })
@@ -126,8 +187,6 @@ export default function ChatPage() {
 
         if (!convError && convs && convs.length > 0) {
           setMemorySummary(convs[0].summary);
-          setMemoryLastUser(convs[0].last_user_message);
-          setMemoryLastAssistant(convs[0].last_assistant_message);
         }
       } catch (err) {
         console.error("Error checking session/subscription/memory:", err);
@@ -140,23 +199,17 @@ export default function ChatPage() {
     loadSessionAndSubscription();
   }, []);
 
-  // 2) Start 2-minute timer ONLY if user is guest and has no subscription
-  // ✅ refresh-proof using localStorage start time
+  // 2) Start timer (guest only) – refresh-proof
   useEffect(() => {
-    if (checkingSession) return; // wait until we know login + subscription status
-    if (!showGuestTimerUI) return; // no timer for logged-in or subscribed users
+    if (checkingSession) return;
+    if (!showGuestTimerUI) return;
 
     let start = Date.now();
     try {
       const saved = localStorage.getItem(CHAT_START_KEY);
-      if (saved && !Number.isNaN(Number(saved))) {
-        start = Number(saved);
-      } else {
-        localStorage.setItem(CHAT_START_KEY, String(start));
-      }
-    } catch {
-      // ignore localStorage issues; fallback to Date.now
-    }
+      if (saved && !Number.isNaN(Number(saved))) start = Number(saved);
+      else localStorage.setItem(CHAT_START_KEY, String(start));
+    } catch {}
 
     const tick = () => {
       const elapsed = Math.floor((Date.now() - start) / 1000);
@@ -165,46 +218,37 @@ export default function ChatPage() {
       return remaining;
     };
 
-    // Set immediately (so UI is correct on load/refresh)
-    const remainingNow = tick();
-    if (remainingNow <= 0) return;
+    const nowRemaining = tick();
+    if (nowRemaining <= 0) return;
 
     const id = setInterval(() => {
-      const remaining = tick();
-      if (remaining <= 0) clearInterval(id);
+      const r = tick();
+      if (r <= 0) clearInterval(id);
     }, 1000);
 
     return () => clearInterval(id);
   }, [checkingSession, showGuestTimerUI]);
 
-  // ✅ NEW: sendToBackend handles 402 and 401 explicitly
   const sendToBackend = async (conversation: Message[]) => {
     const payloadMessages = conversation.map((m) => ({
-      role: m.role === "user" ? "user" : "assistant",
+      role: m.role,
       content: m.text,
     }));
 
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // ✅ IMPORTANT: do NOT send userId anymore (server reads session cookie)
-      body: JSON.stringify({
-        messages: payloadMessages,
-      }),
+      body: JSON.stringify({ messages: payloadMessages }),
     });
 
-    if (res.status === 401) {
-      return { kind: "UNAUTHORIZED" as const };
-    }
+    if (res.status === 401) return { kind: "UNAUTHORIZED" as const };
 
     if (res.status === 402) {
       const data = await res.json().catch(() => null);
       return { kind: "PAYWALL" as const, access: data?.access ?? null };
     }
 
-    if (!res.ok) {
-      throw new Error("Failed to get reply from server");
-    }
+    if (!res.ok) throw new Error("Failed to get reply from server");
 
     const data = await res.json();
     return { kind: "OK" as const, reply: data.reply as string };
@@ -212,19 +256,13 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     if (!input.trim()) return;
-    // ✅ ETAPP 1: lock ONLY when signup wall is shown (guest after 2 min)
     if (showSignupWall || isLoadingReply) return;
 
     setError(null);
 
-    const userText = input.trim();
-    const userMessage: Message = {
-      id: Date.now(),
-      role: "user",
-      text: userText,
-    };
-
+    const userMessage: Message = { id: Date.now(), role: "user", text: input.trim() };
     const nextMessages = [...messages, userMessage];
+
     setMessages(nextMessages);
     setInput("");
     setIsLoadingReply(true);
@@ -232,30 +270,28 @@ export default function ChatPage() {
     try {
       const result = await sendToBackend(nextMessages);
 
-      // ✅ Session expired / not logged in
       if (result.kind === "UNAUTHORIZED") {
         setError("Your session expired. Please log in again.");
         router.push("/login?next=/chat");
         return;
       }
 
-      // ✅ PAYWALL: show premium overlay (don’t show generic error)
       if (result.kind === "PAYWALL") {
         setPaywallAccess(result.access);
         setPaywallOpen(true);
         return;
       }
 
-      // ✅ OK: show assistant reply
-      const replyText = result.reply;
-      const replyMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        text:
-          replyText ||
-          "I’m here with you. It’s okay to take your time and put your feelings into words.",
-      };
-      setMessages((prev) => [...prev, replyMessage]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          text:
+            result.reply ||
+            "I’m here with you. It’s okay to take your time and put your feelings into words.",
+        },
+      ]);
     } catch (err) {
       console.error(err);
       setError("Ventfreely couldn’t respond right now. Please try again.");
@@ -271,18 +307,12 @@ export default function ChatPage() {
     }
   };
 
-  // kept for later ETAPP 2
   const handleUnlockClick = () => {
     window.location.href = SHOPIFY_CHECKOUT_URL;
   };
 
-  const handleLoginClick = () => {
-    router.push("/login?next=/chat");
-  };
-
-  const handleSignupClick = () => {
-    router.push("/signup?next=/chat");
-  };
+  const handleLoginClick = () => router.push("/login?next=/chat");
+  const handleSignupClick = () => router.push("/signup?next=/chat");
 
   const handleLogout = async () => {
     try {
@@ -292,10 +322,7 @@ export default function ChatPage() {
       setHasActiveSubscription(false);
       setSecondsLeft(FREE_SECONDS);
       setMemorySummary(null);
-      setMemoryLastUser(null);
-      setMemoryLastAssistant(null);
 
-      // ✅ restart guest timer cleanly
       try {
         localStorage.removeItem(CHAT_START_KEY);
       } catch {}
@@ -328,8 +355,6 @@ export default function ChatPage() {
       }
 
       setMemorySummary(null);
-      setMemoryLastUser(null);
-      setMemoryLastAssistant(null);
     } catch (err) {
       console.error("Error clearing memory:", err);
     } finally {
@@ -340,8 +365,8 @@ export default function ChatPage() {
   if (checkingSession) {
     return (
       <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center">
-        <div className="rounded-2xl bg-white px-6 py-4 shadow-lg border border-purple-100 text-sm text-gray-600">
-          Checking your account...
+        <div className="rounded-2xl bg-white px-5 py-3 shadow border border-purple-100 text-xs text-slate-600">
+          Checking your account…
         </div>
       </main>
     );
@@ -351,151 +376,181 @@ export default function ChatPage() {
     <main className="min-h-screen w-full bg-[#FAF8FF] text-slate-900">
       {/* Header */}
       <header className="w-full bg-[#401268] text-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
-          {/* Left: logo + tagline */}
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-              <span className="text-xs font-semibold tracking-tight">VF</span>
-            </div>
-            <div className="flex flex-col leading-tight">
+        <div className="mx-auto max-w-5xl px-4 md:px-6">
+          <div className="flex items-center justify-between py-2.5">
+            {/* Logo */}
+            <Link href="/" className="flex items-center gap-2">
+              <div className="relative h-7 w-7 overflow-hidden rounded-lg bg-white/10 border border-white/10">
+                <Image
+                  src="/logo.svg"
+                  alt="Ventfreely"
+                  fill
+                  className="object-contain p-1"
+                  sizes="28px"
+                  priority
+                />
+              </div>
               <span className="text-sm font-semibold tracking-tight">
                 Ventfreely
               </span>
-              <span className="text-[11px] text-violet-100/80">
-                Gentle space to vent, not a therapist
-              </span>
-            </div>
-          </div>
+            </Link>
 
-          {/* Right: timer (for guests) + account menu */}
-          <div className="flex items-center gap-3">
-            {/* Timer for guests without subscription */}
-            {showGuestTimerUI && (
-              <div className="hidden sm:flex items-center gap-1 text-[11px] text-violet-100/90">
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                  <span>
-                    {secondsLeft > 0
-                      ? `Free time: ${formattedTime}`
-                      : "Free time ended"}
-                  </span>
-                </span>
-              </div>
-            )}
+            {/* Desktop nav */}
+            <nav className="hidden md:flex items-center gap-1">
+              {navItems.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`rounded-full px-3 py-1.5 text-xs transition ${
+                      active ? "bg-white/15" : "hover:bg-white/10"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
 
-            {/* Account dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setAccountMenuOpen((prev) => !prev)}
-                className="flex items-center gap-2 rounded-full bg-white/10 px-2 py-1 text-[11px] hover:bg-white/15 transition"
-              >
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
-                  <span className="text-xs font-semibold">
-                    {isLoggedIn
-                      ? userEmail?.charAt(0).toUpperCase() ?? "U"
-                      : "A"}
-                  </span>
-                </div>
-                <span className="hidden sm:inline text-violet-100/90">
-                  {isLoggedIn ? userEmail : "Account"}
-                </span>
-              </button>
-
-              {accountMenuOpen && (
-                <div className="absolute right-0 mt-2 w-40 rounded-xl bg-white text-[12px] text-slate-800 shadow-lg border border-violet-100 z-20">
-                  {!isLoggedIn ? (
-                    <div className="py-1">
-                      <button
-                        onClick={() => {
-                          setAccountMenuOpen(false);
-                          handleSignupClick();
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-violet-50"
-                      >
-                        Sign up
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAccountMenuOpen(false);
-                          handleLoginClick();
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-violet-50"
-                      >
-                        Log in
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="py-1">
-                      <button
-                        onClick={() => {
-                          setAccountMenuOpen(false);
-                          router.push("/account");
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-violet-50"
-                      >
-                        Account
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setAccountMenuOpen(false);
-                          handleLogout();
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-violet-50"
-                      >
-                        Log out
-                      </button>
-                    </div>
-                  )}
+            {/* Right */}
+            <div className="flex items-center gap-2">
+              {showGuestTimerUI && (
+                <div className="hidden sm:inline-flex items-center rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-violet-100/90">
+                  {secondsLeft > 0 ? `Free: ${formattedTime}` : "Free ended"}
                 </div>
               )}
+
+              {/* Mobile nav toggle */}
+              <button
+                onClick={() => setMobileNavOpen((v) => !v)}
+                className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/15 transition"
+                aria-label="Menu"
+              >
+                <IconMenu open={mobileNavOpen} />
+              </button>
+
+              {/* Account */}
+              <div className="relative">
+                <button
+                  onClick={() => setAccountMenuOpen((v) => !v)}
+                  className="inline-flex h-9 items-center gap-2 rounded-full bg-white/10 px-2.5 hover:bg-white/15 transition"
+                  aria-label="Account"
+                >
+                  <IconUser className="h-4 w-4" />
+                  <span className="hidden sm:inline text-xs text-violet-100/90">
+                    {isLoggedIn ? "Account" : "Sign in"}
+                  </span>
+                </button>
+
+                {accountMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 rounded-xl bg-white text-slate-800 shadow-lg border border-violet-100 z-30 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-violet-100">
+                      <div className="text-[11px] text-slate-500">Signed in as</div>
+                      <div className="text-xs font-medium truncate">
+                        {isLoggedIn ? userEmail : "Guest"}
+                      </div>
+                    </div>
+
+                    {!isLoggedIn ? (
+                      <div className="py-1">
+                        <button
+                          onClick={() => {
+                            setAccountMenuOpen(false);
+                            handleSignupClick();
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50"
+                        >
+                          Sign up
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAccountMenuOpen(false);
+                            handleLoginClick();
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50"
+                        >
+                          Log in
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="py-1">
+                        <button
+                          onClick={() => {
+                            setAccountMenuOpen(false);
+                            router.push("/account");
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50"
+                        >
+                          Account
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAccountMenuOpen(false);
+                            handleLogout();
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50"
+                        >
+                          Log out
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Mobile nav */}
+          {mobileNavOpen && (
+            <div className="md:hidden pb-3">
+              <div className="grid grid-cols-2 gap-2">
+                {navItems.map((item) => {
+                  const active = isActive(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`rounded-xl px-3 py-2 text-xs transition ${
+                        active ? "bg-white/15" : "bg-white/10 hover:bg-white/15"
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
-      {/* ✅ PREMIUM PAYWALL OVERLAY (shows when /api/chat returns 402) */}
+      {/* PAYWALL overlay (402 from /api/chat) */}
       {paywallOpen && !showSignupWall && (
         <div className="fixed inset-0 z-[75] flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
             onClick={() => setPaywallOpen(false)}
           />
-          <div className="relative mx-4 w-full max-w-[460px]">
+          <div className="relative mx-4 w-full max-w-[440px]">
             <div className="rounded-3xl border border-violet-200/70 bg-white/90 backdrop-blur-md shadow-2xl overflow-hidden">
-              <div className="relative px-6 pt-6 pb-5 bg-gradient-to-br from-[#401268] via-[#6B21A8] to-[#F973C9] text-white">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px]">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
-                      <span>Premium required</span>
-                    </div>
-                    <h3 className="mt-3 text-lg font-semibold tracking-tight">
-                      Your free trial has ended
-                    </h3>
-                    <p className="mt-1 text-[12px] text-white/90 leading-relaxed">
-                      Unlock Premium to keep chatting without limits.
-                    </p>
-                  </div>
-
-                  <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 border border-white/15">
-                    <span className="text-xs font-semibold">VF</span>
-                  </div>
-                </div>
-
-                <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
-                <div className="pointer-events-none absolute -left-10 -bottom-10 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+              <div className="px-5 pt-5 pb-4 bg-[#401268] text-white">
+                <div className="text-xs opacity-90">Premium required</div>
+                <h3 className="mt-1 text-base font-semibold tracking-tight">
+                  Your free trial has ended
+                </h3>
+                <p className="mt-1 text-xs text-white/85">
+                  Unlock Premium to keep chatting without limits.
+                </p>
               </div>
 
-              <div className="px-6 py-5">
-                <div className="rounded-2xl border border-violet-200/70 bg-white px-4 py-3 text-[12px] text-slate-700">
-                  <div className="font-semibold text-[#2A1740]">
-                    What you get
-                  </div>
-                  <ul className="mt-1 list-disc pl-4 text-[12px] text-slate-700 space-y-1">
-                    <li>Unlimited chatting</li>
-                    <li>Your memory summary stays saved</li>
-                    <li>Supportive, calm responses</li>
+              <div className="px-5 py-4">
+                <div className="rounded-2xl border border-violet-200/70 bg-white px-4 py-3 text-xs text-slate-700">
+                  <div className="font-medium text-slate-900">Includes</div>
+                  <ul className="mt-1 list-disc pl-4 space-y-1">
+                    <li>Unlimited chat</li>
+                    <li>Saved memory summary</li>
+                    <li>Daily & Weekly features</li>
                   </ul>
 
                   {paywallAccess?.trialEndsAt && (
@@ -508,26 +563,24 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                <div className="mt-4 grid grid-cols-1 gap-2">
+                <div className="mt-3 grid grid-cols-1 gap-2">
                   <button
                     onClick={handleUnlockClick}
-                    className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-md shadow-[#401268]/25 bg-[#401268] hover:brightness-110 active:scale-[0.99] transition"
+                    className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-white bg-[#401268] hover:brightness-110 active:scale-[0.99] transition"
                   >
                     Unlock Premium
                   </button>
-
                   <button
                     onClick={() => setPaywallOpen(false)}
-                    className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-[#401268] bg-white border border-violet-200 hover:bg-violet-50 active:scale-[0.99] transition"
+                    className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-[#401268] bg-white border border-violet-200 hover:bg-violet-50 active:scale-[0.99] transition"
                   >
                     Not now
                   </button>
                 </div>
 
-                <p className="mt-4 text-[10px] text-slate-500 leading-relaxed">
-                  Ventfreely is a supportive AI companion — not a therapist. If
-                  you’re in danger or feel like you might hurt yourself, contact
-                  local emergency services right now.
+                <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
+                  Ventfreely is a supportive AI companion, not a therapist. If you’re in
+                  immediate danger, contact local emergency services.
                 </p>
               </div>
             </div>
@@ -535,196 +588,100 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* YouTube-style top progress bar for guest timer */}
-      {showGuestTimerUI && (
-        <div className="w-full bg-[#FAF8FF]">
-          <div className="mx-auto max-w-5xl px-4 md:px-6 pt-2">
-            <div className="h-1.5 w-full rounded-full bg-white/70 overflow-hidden shadow-[0_0_0_1px_rgba(148,163,184,0.25)]">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4] transition-all duration-300"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ✅ BEAUTIFUL SIGNUP WALL OVERLAY after 2 min (guest only) */}
+      {/* SIGNUP wall (guest after 2 min) */}
       {showSignupWall && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center">
-          {/* Backdrop */}
           <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
-
-          {/* Card */}
           <div className="relative mx-4 w-full max-w-[440px]">
             <div className="rounded-3xl border border-violet-200/70 bg-white/90 backdrop-blur-md shadow-2xl overflow-hidden">
-              {/* Top gradient header */}
-              <div className="relative px-6 pt-6 pb-5 bg-gradient-to-br from-[#401268] via-[#6B21A8] to-[#F973C9] text-white">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px]">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                      <span>Guest session ended</span>
-                    </div>
-                    <h3 className="mt-3 text-lg font-semibold tracking-tight">
-                      Create a free account to continue
-                    </h3>
-                    <p className="mt-1 text-[12px] text-white/90 leading-relaxed">
-                      Your chat will be saved so you don’t have to start from
-                      zero next time.
-                    </p>
-                  </div>
-
-                  <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 border border-white/15">
-                    <span className="text-xs font-semibold">VF</span>
-                  </div>
-                </div>
-
-                {/* Decorative glow */}
-                <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
-                <div className="pointer-events-none absolute -left-10 -bottom-10 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+              <div className="px-5 pt-5 pb-4 bg-[#401268] text-white">
+                <div className="text-xs opacity-90">Guest session ended</div>
+                <h3 className="mt-1 text-base font-semibold tracking-tight">
+                  Create an account to continue
+                </h3>
+                <p className="mt-1 text-xs text-white/85">
+                  Save your chat so you don’t have to start over.
+                </p>
               </div>
 
-              {/* Body */}
-              <div className="px-6 py-5">
-                <div className="rounded-2xl border border-violet-200/70 bg-white px-4 py-3 text-[12px] text-slate-700">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 h-7 w-7 rounded-xl bg-gradient-to-br from-[#F973C9] via-[#F5A5E0] to-[#FBD3F4] shadow-sm" />
-                    <div className="leading-relaxed">
-                      <div className="font-semibold text-[#2A1740]">
-                        Continue in one click
-                      </div>
-                      <div className="mt-0.5 text-slate-600">
-                        Sign up or log in to keep chatting — calm, private, and
-                        saved.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-2">
+              <div className="px-5 py-4">
+                <div className="grid grid-cols-1 gap-2">
                   <button
                     onClick={handleSignupClick}
-                    className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-md shadow-[#401268]/25 bg-[#401268] hover:brightness-110 active:scale-[0.99] transition"
+                    className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-white bg-[#401268] hover:brightness-110 active:scale-[0.99] transition"
                   >
-                    Create free account
+                    Create account
                   </button>
-
                   <button
                     onClick={handleLoginClick}
-                    className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-[#401268] bg-white border border-violet-200 hover:bg-violet-50 active:scale-[0.99] transition"
+                    className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-[#401268] bg-white border border-violet-200 hover:bg-violet-50 active:scale-[0.99] transition"
                   >
                     I already have an account
                   </button>
                 </div>
 
-                <p className="mt-4 text-[10px] text-slate-500 leading-relaxed">
-                  Ventfreely is a supportive AI companion — not a therapist. If
-                  you’re in danger or feel like you might hurt yourself, contact
-                  local emergency services right now.
+                <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
+                  Ventfreely is a supportive AI companion, not a therapist. If you’re in
+                  immediate danger, contact local emergency services.
                 </p>
               </div>
-            </div>
-
-            {/* Tiny bottom hint */}
-            <div className="mt-3 flex justify-center">
-              <span className="text-[10px] text-slate-500">
-                Tip: Google sign-in can be added on the signup page (STEP 2).
-              </span>
             </div>
           </div>
         </div>
       )}
 
       {/* Content */}
-      <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
-        <div className="grid gap-8 md:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)] items-start">
-          {/* Left: Chat */}
-          <section className="space-y-4">
-            {/* Text intro */}
-            <header className="space-y-1 border-b border-violet-200/40 pb-3">
-              <h1 className="text-base md:text-lg font-semibold tracking-tight text-[#2A1740]">
-                Ventfreely chat
-              </h1>
-              <p className="text-xs md:text-sm text-slate-700 max-w-md">
-                A calm, anonymous space to say the things that feel heavy in
-                your head. No judgment. No pressure. Just a supportive AI friend
-                listening to you.
-              </p>
-
-              {/* Memory summary pill */}
-              {isLoggedIn && memorySummary && (
-                <div className="mt-3 rounded-xl bg-white/80 border border-violet-200 px-3 py-2 text-[11px] text-slate-700">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-[11px] text-[#2A1740] mb-1">
-                        Last time you talked about:
-                      </div>
-                      <p className="line-clamp-4">{memorySummary}</p>
-                    </div>
+      <div className="mx-auto max-w-5xl px-4 py-5 md:px-6 md:py-7">
+        <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-start">
+          {/* Chat */}
+          <section className="space-y-3">
+            <div className="rounded-2xl bg-white/70 border border-violet-200/60 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h1 className="text-sm font-semibold text-[#2A1740]">Chat</h1>
+                  <p className="mt-0.5 text-xs text-slate-700">
+                    Say what’s heavy. I’ll listen and respond gently.
+                  </p>
+                </div>
+                {showGuestTimerUI && (
+                  <div className="text-[11px] text-slate-600">
+                    {secondsLeft > 0 ? formattedTime : "Ended"}
                   </div>
+                )}
+              </div>
+
+              {isLoggedIn && memorySummary && (
+                <div className="mt-3 rounded-xl bg-white border border-violet-200/70 px-3 py-2 text-[11px] text-slate-700">
+                  <div className="font-medium text-[#2A1740] mb-1">Last time:</div>
+                  <p className="line-clamp-3">{memorySummary}</p>
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <span className="text-[10px] text-slate-500">
-                      Ventfreely remembers this summary to help you not start
-                      from zero.
+                      Saved to help you continue.
                     </span>
                     <button
                       onClick={handleClearMemory}
                       disabled={isClearingMemory}
                       className="text-[10px] text-[#401268] hover:underline disabled:opacity-60"
                     >
-                      {isClearingMemory ? "Clearing…" : "Delete my memory"}
+                      {isClearingMemory ? "Clearing…" : "Clear"}
                     </button>
                   </div>
                 </div>
               )}
-            </header>
+            </div>
 
-            {/* Timer / access info */}
-            {showGuestTimerUI ? (
-              <div className="space-y-1 text-[11px]">
-                {secondsLeft > 0 ? (
-                  <p className="text-slate-700">
-                    You&apos;re trying Ventfreely without an account. You have{" "}
-                    <strong>{formattedTime}</strong> of free chat time left
-                    before we ask you to save your conversation.
-                  </p>
-                ) : (
-                  <p className="text-amber-800">
-                    Your guest time has ended. Create a free account to continue
-                    and save your chat.
-                  </p>
-                )}
-              </div>
-            ) : !hasUnlimitedAccess && isLoggedIn ? (
-              <div className="space-y-1 text-[11px]">
-                <p className="text-amber-800">
-                  Your account doesn&apos;t have an active Ventfreely
-                  subscription yet.
-                </p>
-              </div>
-            ) : null}
-
-            {/* Messages area */}
-            <div className="flex flex-col gap-2 max-h-[420px] min-h-[260px] overflow-y-auto py-3 border-y border-violet-200/50">
-              <div className="flex justify-center my-1">
-                <span className="px-3 py-1 rounded-full bg-white/70 text-[10px] text-slate-600">
-                  Today
-                </span>
-              </div>
-
+            {/* Messages */}
+            <div className="flex flex-col gap-2 max-h-[440px] min-h-[280px] overflow-y-auto rounded-2xl bg-white/70 border border-violet-200/60 px-3 py-3">
               {messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`flex ${
-                    m.role === "user" ? "justify-end" : "justify-start"
-                  }`}
+                  className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed ${
+                    className={`max-w-[82%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed ${
                       m.role === "user"
-                        ? "bg-[#401268] text-white rounded-br-[1.6rem]"
-                        : "bg-white/80 text-slate-900 rounded-bl-[1.6rem]"
+                        ? "bg-[#401268] text-white rounded-br-[1.4rem]"
+                        : "bg-white text-slate-900 border border-slate-200/60 rounded-bl-[1.4rem]"
                     }`}
                   >
                     {m.text}
@@ -734,13 +691,13 @@ export default function ChatPage() {
 
               {isLoadingReply && (
                 <div className="flex justify-start">
-                  <div className="max-w-[70%] px-3 py-2 rounded-2xl rounded-bl-[1.6rem] bg-white/80 text-slate-700 text-xs flex items-center gap-2">
+                  <div className="max-w-[70%] px-3 py-2 rounded-2xl rounded-bl-[1.4rem] bg-white border border-slate-200/60 text-slate-700 text-xs flex items-center gap-2">
                     <span className="flex gap-1">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#401268] animate-pulse" />
                       <span className="h-1.5 w-1.5 rounded-full bg-[#A268F5] animate-pulse [animation-delay:120ms]" />
                       <span className="h-1.5 w-1.5 rounded-full bg-[#F5A5E0] animate-pulse [animation-delay:240ms]" />
                     </span>
-                    <span>Ventfreely is thinking about how to respond…</span>
+                    <span>Thinking…</span>
                   </div>
                 </div>
               )}
@@ -748,28 +705,29 @@ export default function ChatPage() {
 
             {/* Error */}
             {error && (
-              <div className="text-[11px] text-amber-800 bg-amber-50/80 border border-amber-100 rounded-full px-3 py-2">
+              <div className="text-[11px] text-amber-800 bg-amber-50/80 border border-amber-100 rounded-xl px-3 py-2">
                 {error}
               </div>
             )}
 
             {/* Input */}
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2">
               <input
-                className="flex-1 rounded-full bg-white/80 border border-violet-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5] disabled:opacity-50"
-                placeholder={
-                  showSignupWall
-                    ? "Create a free account to continue…"
-                    : "Type whatever you’re thinking right now…"
-                }
+                className="flex-1 rounded-xl bg-white/80 border border-violet-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5] disabled:opacity-50"
+                placeholder={showSignupWall ? "Create an account to continue…" : "Type here…"}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
                 disabled={showSignupWall || isLoadingReply}
               />
               <button
                 onClick={handleSend}
-                className="px-4 py-2 rounded-full text-sm font-medium bg-[#401268] text-white hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-xl px-3.5 py-2 text-sm font-medium bg-[#401268] text-white hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={!input.trim() || showSignupWall || isLoadingReply}
               >
                 Send
@@ -777,41 +735,16 @@ export default function ChatPage() {
             </div>
           </section>
 
-          {/* Right: info / safety */}
-          <aside className="space-y-4 text-xs md:text-sm text-slate-700">
-            <section className="space-y-2 border-b border-violet-200/40 pb-4 md:pb-5">
-              <h2 className="text-sm font-semibold text-[#2A1740]">
-                What Ventfreely is (and isn&apos;t)
-              </h2>
-              <p>
-                Ventfreely is a gentle AI chat where you can talk about stressful
-                thoughts, feelings, and everyday mental load. It&apos;s designed
-                to feel like a calm friend, not a lecture.
+          {/* Quiet legal/safety */}
+          <aside className="space-y-3">
+            <div className="rounded-2xl bg-white/70 border border-violet-200/60 px-4 py-3">
+              <div className="text-xs font-semibold text-[#2A1740]">Safety</div>
+              <p className="mt-2 text-xs text-slate-700 leading-relaxed">
+                Ventfreely is an AI companion, not a therapist. If you’re in immediate danger
+                or feel like you might hurt yourself or someone else, contact local emergency
+                services or someone you trust.
               </p>
-              <ul className="space-y-1 list-disc pl-4 text-xs text-slate-700">
-                <li>Anonymous by default – you don&apos;t need your real name.</li>
-                <li>Validates your feelings instead of judging them.</li>
-                <li>
-                  Short free session, then we ask you to save the conversation.
-                </li>
-              </ul>
-            </section>
-
-            <section className="space-y-2">
-              <h3 className="text-xs font-semibold text-[#2A1740]">
-                Important safety note
-              </h3>
-              <p className="text-xs md:text-sm">
-                Ventfreely is an AI companion, not a human and not a licensed
-                professional. It can be comforting and reflective, but it cannot
-                handle emergencies or replace real mental health care.
-              </p>
-              <p className="text-xs md:text-sm">
-                If you ever feel like you might hurt yourself or someone else,
-                or you&apos;re in immediate danger, please contact local
-                emergency services or someone you trust right away.
-              </p>
-            </section>
+            </div>
           </aside>
         </div>
       </div>
