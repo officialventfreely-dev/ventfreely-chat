@@ -1,3 +1,4 @@
+// FILE: app/insights/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -28,33 +29,50 @@ const headingFont = Barlow_Condensed({
 
 type Trend = "up" | "flat" | "down" | "na";
 
-type Week = {
-  range: { start: string; end: string };
-  completedDays: number;
-  topEmotion: string | null;
-  trend: Trend;
-  series: Array<{ date: string; score: number; emotion: string; energy: string }>;
-  insights: string[];
-};
+type InsightsCompare =
+  | {
+      thisWeek: {
+        range: { start: string; end: string };
+        completedDays: number;
+        topEmotion: string | null;
+        trend: Trend;
+        insights: string[];
+      };
+      lastWeek: {
+        range: { start: string; end: string };
+        completedDays: number;
+        topEmotion: string | null;
+        trend: Trend;
+        insights: string[];
+      };
+      change: { deltaDays: number; note: string };
+    }
+  | null;
 
-type CompareData = {
-  thisWeek: Week;
-  lastWeek: Week;
-  change: { deltaDays: number; note: string };
-};
+type GateState = "loading" | "ok" | "unauthorized" | "paywall" | "error";
 
-type Gate = "loading" | "ok" | "unauthorized" | "paywall" | "error";
+function trendArrow(t: Trend) {
+  if (t === "up") return "↑";
+  if (t === "down") return "↓";
+  if (t === "flat") return "→";
+  return "—";
+}
 
-function trendChip(t: Trend) {
-  if (t === "up") return "↑ Improving";
-  if (t === "down") return "↓ Lower";
-  if (t === "flat") return "→ Steady";
-  return "• Not enough data";
+function trendText(t: Trend) {
+  if (t === "up") return "improving";
+  if (t === "down") return "lower";
+  if (t === "flat") return "steady";
+  return "no data";
+}
+
+function fmtRange(range?: { start: string; end: string } | null) {
+  if (!range?.start || !range?.end) return "";
+  return `${range.start} → ${range.end}`;
 }
 
 export default function InsightsPage() {
-  const [gate, setGate] = useState<Gate>("loading");
-  const [data, setData] = useState<CompareData | null>(null);
+  const [gate, setGate] = useState<GateState>("loading");
+  const [data, setData] = useState<InsightsCompare>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -69,7 +87,7 @@ export default function InsightsPage() {
         if (res.status === 402) return setGate("paywall");
         if (!res.ok) return setGate("error");
 
-        const json = (await res.json()) as CompareData;
+        const json = (await res.json()) as InsightsCompare;
         setData(json);
         setGate("ok");
       } catch {
@@ -82,7 +100,14 @@ export default function InsightsPage() {
     };
   }, []);
 
-  const changeNote = data?.change?.note ?? "";
+  const note = useMemo(() => data?.change?.note ?? "", [data]);
+  const thisWeek = data?.thisWeek ?? null;
+  const lastWeek = data?.lastWeek ?? null;
+
+  const insights = useMemo(() => {
+    const arr = thisWeek?.insights ?? [];
+    return arr.filter(Boolean).slice(0, 4);
+  }, [thisWeek]);
 
   return (
     <main
@@ -120,22 +145,21 @@ export default function InsightsPage() {
           </Link>
 
           <nav className="hidden sm:flex items-center gap-1 text-[12px] text-white/80">
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/weekly">
-              Weekly
+            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/chat">
+              Chat
             </Link>
             <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/daily">
               Daily
             </Link>
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/chat">
-              Chat
+            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/weekly">
+              Weekly
             </Link>
           </nav>
         </div>
       </header>
 
-      {/* Content */}
       <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
-        <section className="mx-auto max-w-3xl text-center">
+        <section className="mx-auto max-w-xl text-center">
           <h1
             className="text-5xl font-semibold md:text-6xl"
             style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
@@ -144,109 +168,114 @@ export default function InsightsPage() {
           </h1>
 
           <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/85">
-            A soft snapshot of your last 7 days — and how it compares to the week before.
+            A gentle comparison of this week vs last week.
           </p>
 
-          {/* Gate states */}
           {gate === "loading" && (
-            <Card>
-              <p className="text-[13px] text-white/70">Loading…</p>
-            </Card>
+            <div className="mt-10 rounded-3xl border border-white/15 bg-white/5 p-6 text-left">
+              <p
+                className="text-[12px] text-white/60"
+                style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+              >
+                LOADING
+              </p>
+              <p className="mt-2 text-[14px] text-white/80">Loading your insights…</p>
+            </div>
           )}
 
           {gate === "unauthorized" && (
-            <Card>
-              <p
-                className="text-[12px] text-white/60"
-                style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-              >
-                LOG IN REQUIRED
-              </p>
-              <p className="mt-2 text-[14px] text-white/85">
-                Please log in to view your insights.
-              </p>
-
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <Link
-                  href="/login"
-                  className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
-                  style={{
-                    fontFamily: "var(--font-subheading)",
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Log in
-                </Link>
-                <Link
-                  href="/signup"
-                  className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-4 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
-                  style={{
-                    fontFamily: "var(--font-subheading)",
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Create account
-                </Link>
-              </div>
-            </Card>
+            <SimpleCard
+              title="LOG IN TO VIEW INSIGHTS"
+              text="Insights are tied to your account."
+              primaryHref="/login"
+              primaryText="Log in"
+              secondaryHref="/signup"
+              secondaryText="Create account"
+            />
           )}
 
           {gate === "paywall" && (
-            <Card>
-              <p
-                className="text-[12px] text-white/60"
-                style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-              >
-                PREMIUM REQUIRED
-              </p>
-              <p className="mt-2 text-[14px] text-white/85">
-                Insights are part of Premium.
-              </p>
-
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <Link
-                  href={CHECKOUT_URL}
-                  className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
-                  style={{
-                    fontFamily: "var(--font-subheading)",
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Unlock Premium
-                </Link>
-                <Link
-                  href="/daily"
-                  className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-4 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
-                  style={{
-                    fontFamily: "var(--font-subheading)",
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Open Daily
-                </Link>
-              </div>
-            </Card>
+            <SimpleCard
+              title="PREMIUM REQUIRED"
+              text="Insights are part of Premium."
+              primaryHref={CHECKOUT_URL}
+              primaryText="Unlock Premium"
+              secondaryHref="/daily"
+              secondaryText="Open daily"
+            />
           )}
 
           {gate === "error" && (
-            <Card>
-              <p
-                className="text-[12px] text-white/60"
-                style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-              >
-                COULDN’T LOAD
-              </p>
-              <p className="mt-2 text-[14px] text-white/85">
-                Please try again in a moment.
-              </p>
+            <SimpleCard
+              title="COULDN’T LOAD"
+              text="Please try again in a moment."
+              primaryHref="/insights"
+              primaryText="Retry"
+              secondaryHref="/"
+              secondaryText="Back home"
+              onPrimaryClick={() => window.location.reload()}
+            />
+          )}
 
-              <div className="mt-5">
-                <button
-                  onClick={() => window.location.reload()}
+          {gate === "ok" && (
+            <div className="mt-10 text-left">
+              <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
+                <p
+                  className="text-[12px] text-white/60"
+                  style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+                >
+                  WHAT CHANGED
+                </p>
+                <p className="mt-2 text-[14px] text-white/85">
+                  {note || "Your weekly comparison is ready."}
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <WeekCard
+                  title="THIS WEEK"
+                  range={fmtRange(thisWeek?.range)}
+                  completedDays={thisWeek?.completedDays ?? 0}
+                  topEmotion={thisWeek?.topEmotion ?? null}
+                  trend={thisWeek?.trend ?? "na"}
+                />
+
+                <WeekCard
+                  title="LAST WEEK"
+                  range={fmtRange(lastWeek?.range)}
+                  completedDays={lastWeek?.completedDays ?? 0}
+                  topEmotion={lastWeek?.topEmotion ?? null}
+                  trend={lastWeek?.trend ?? "na"}
+                />
+              </div>
+
+              <div className="mt-4 rounded-3xl border border-white/15 bg-white/5 p-5">
+                <p
+                  className="text-[12px] text-white/60"
+                  style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+                >
+                  SOFT INSIGHTS
+                </p>
+
+                {insights.length ? (
+                  <ul className="mt-3 space-y-2 text-[13px] text-white/85">
+                    {insights.map((s, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="mt-[6px] inline-block h-1.5 w-1.5 rounded-full bg-white/50" />
+                        <span className="leading-relaxed">{s}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-[13px] text-white/70">
+                    Do a few more days to unlock clearer patterns.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Link
+                  href="/daily"
                   className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
                   style={{
                     fontFamily: "var(--font-subheading)",
@@ -254,61 +283,23 @@ export default function InsightsPage() {
                     textTransform: "uppercase",
                   }}
                 >
-                  Retry
-                </button>
-              </div>
-            </Card>
-          )}
+                  Open daily
+                </Link>
 
-          {/* OK */}
-          {gate === "ok" && data && (
-            <>
-              <div className="mt-8 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] text-white/85">
-                {changeNote}
-              </div>
-
-              <div className="mt-6 grid gap-3 text-left md:grid-cols-2">
-                <WeekCard title="THIS WEEK" week={data.thisWeek} />
-                <WeekCard title="LAST WEEK" week={data.lastWeek} />
-              </div>
-
-              <div className="mt-8 text-center">
-                <p className="text-[11px] text-white/45">
-                  This is a gentle snapshot — not a diagnosis or advice.
-                </p>
-
-                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
-                  <Link
-                    href="/daily"
-                    className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
-                    style={{
-                      fontFamily: "var(--font-subheading)",
-                      letterSpacing: "0.06em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Do today’s reflection
+                <div className="flex items-center gap-4">
+                  <Link href="/weekly" className="text-[12px] text-white/60 hover:text-white/80">
+                    Weekly report →
                   </Link>
-                  <Link
-                    href="/weekly"
-                    className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-4 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
-                    style={{
-                      fontFamily: "var(--font-subheading)",
-                      letterSpacing: "0.06em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Weekly report
-                  </Link>
-                </div>
-
-                <div className="mt-5">
-                  <Link href="/" className="text-[12px] text-white/60 hover:text-white/80">
-                    Back home
+                  <Link href="/chat" className="text-[12px] text-white/60 hover:text-white/80">
+                    Open chat →
                   </Link>
                 </div>
               </div>
-            </>
+
+              <p className="mt-8 text-center text-[11px] text-white/45">
+                Calm, not perfect. Patterns are just hints — not labels.
+              </p>
+            </div>
           )}
         </section>
       </div>
@@ -316,13 +307,19 @@ export default function InsightsPage() {
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <div className="mt-8 rounded-3xl border border-white/15 bg-white/5 p-5 text-left">{children}</div>;
-}
-
-function WeekCard({ title, week }: { title: string; week: Week }) {
-  const chip = useMemo(() => trendChip(week.trend), [week.trend]);
-
+function WeekCard({
+  title,
+  range,
+  completedDays,
+  topEmotion,
+  trend,
+}: {
+  title: string;
+  range: string;
+  completedDays: number;
+  topEmotion: string | null;
+  trend: "up" | "flat" | "down" | "na";
+}) {
   return (
     <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
       <div className="flex items-start justify-between gap-4">
@@ -333,34 +330,108 @@ function WeekCard({ title, week }: { title: string; week: Week }) {
           >
             {title}
           </p>
-          <p className="mt-2 text-[14px] text-white/85">
-            Days: {week.completedDays}/7
-          </p>
-          <p className="mt-1 text-[12px] text-white/60">
-            Top emotion:{" "}
-            <span className="text-white/85 font-medium">{week.topEmotion ?? "—"}</span>
-          </p>
+          <p className="mt-2 text-[12px] text-white/55">{range || "—"}</p>
         </div>
 
-        <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[12px] text-white/85">
-          {chip}
-        </span>
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="space-y-2 text-[13px] text-white/90">
-          {(week.insights?.length ? week.insights : ["Not enough data yet."]).map((line, idx) => (
-            <div key={idx} className="flex gap-2">
-              <span className="text-white/50">•</span>
-              <span className="text-white/85">{line}</span>
-            </div>
-          ))}
+        <div className="text-right">
+          <p className="text-[11px] text-white/50">Trend</p>
+          <p className="text-[16px] font-semibold text-white/85">{trendArrow(trend)}</p>
         </div>
       </div>
 
-      <p className="mt-4 text-[11px] text-white/45">
-        {week.range.start} → {week.range.end}
-      </p>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <MiniStat label="Completed" value={`${completedDays}/7`} />
+        <MiniStat label="Top emotion" value={topEmotion ?? "—"} />
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+        <p className="text-[11px] text-white/50">Trend</p>
+        <p className="mt-1 text-[13px] font-semibold text-white/85">{trendText(trend)}</p>
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+      <p className="text-[11px] text-white/50">{label}</p>
+      <p className="mt-1 text-[14px] font-semibold text-white/85">{value}</p>
+    </div>
+  );
+}
+
+function SimpleCard({
+  title,
+  text,
+  primaryHref,
+  primaryText,
+  secondaryHref,
+  secondaryText,
+  onPrimaryClick,
+}: {
+  title: string;
+  text: string;
+  primaryHref: string;
+  primaryText: string;
+  secondaryHref?: string;
+  secondaryText?: string;
+  onPrimaryClick?: () => void;
+}) {
+  return (
+    <div className="mt-10 text-left">
+      <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          {title}
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">{text}</p>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          {onPrimaryClick ? (
+            <button
+              type="button"
+              onClick={onPrimaryClick}
+              className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+              style={{
+                fontFamily: "var(--font-subheading)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              {primaryText}
+            </button>
+          ) : (
+            <Link
+              href={primaryHref}
+              className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+              style={{
+                fontFamily: "var(--font-subheading)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              {primaryText}
+            </Link>
+          )}
+
+          {secondaryHref && secondaryText ? (
+            <Link
+              href={secondaryHref}
+              className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-4 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+              style={{
+                fontFamily: "var(--font-subheading)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              {secondaryText}
+            </Link>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,8 +1,8 @@
+// FILE: app/api/chat/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
-import { ensureProfileAndGetPrefs } from "@/lib/accountPrefs";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -19,46 +19,99 @@ const SUMMARY_MAX_TOKENS = 200;
 
 /**
  * ETAPP 4.1 – User memory (light, safe)
- * We store only patterns, not full chat text.
+ * ETAPP 4.4.4 – Memory-aware polish:
+ * - Adds "confidence" so the assistant doesn't sound certain
+ * - Uses patterns only when helpful, never as facts
+ * - Never mentions "memory" / "user_memory" / "patterns database" explicitly
  */
 type UserMemoryRow = {
   dominant_emotions: string[] | null;
   recurring_themes: string[] | null;
-  preferred_tone: string | null; // e.g. "calm" | "reflective" | "supportive"
-  energy_pattern: string | null; // e.g. "low_evenings" | "fluctuating" | "stable"
+  preferred_tone: string | null;
+  energy_pattern: string | null;
+  updated_at?: string | null;
 };
+
+function safeIsoToMs(iso?: string | null) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function computeMemoryConfidence(memory: UserMemoryRow | null) {
+  if (!memory) return { level: "none" as const, score: 0 };
+
+  let score = 0;
+
+  const emotions = memory.dominant_emotions?.length ?? 0;
+  const themes = memory.recurring_themes?.length ?? 0;
+  if (emotions >= 1) score += 35;
+  if (emotions >= 2) score += 10;
+  if (themes >= 1) score += 25;
+  if (memory.preferred_tone) score += 10;
+  if (memory.energy_pattern) score += 10;
+
+  // recency penalty
+  const updatedMs = safeIsoToMs(memory.updated_at ?? null);
+  if (updatedMs) {
+    const days = Math.floor((Date.now() - updatedMs) / (1000 * 60 * 60 * 24));
+    if (days >= 60) score -= 25;
+    else if (days >= 30) score -= 15;
+    else if (days >= 14) score -= 8;
+  }
+
+  score = clamp(score, 0, 100);
+
+  const level =
+    score >= 70 ? ("high" as const) : score >= 40 ? ("medium" as const) : ("low" as const);
+
+  return { level, score };
+}
 
 function buildMemoryBlock(memory: UserMemoryRow | null) {
   if (!memory) return "";
 
+  const { level, score } = computeMemoryConfidence(memory);
+
+  // If confidence is extremely low, don’t inject anything at all.
+  if (score < 20) return "";
+
   const lines: string[] = [];
 
   if (memory.dominant_emotions?.length) {
-    lines.push(`- Emotions that often appear: ${memory.dominant_emotions.join(", ")}`);
+    lines.push(`- Emotions that sometimes appear: ${memory.dominant_emotions.join(", ")}`);
   }
 
   if (memory.recurring_themes?.length) {
-    lines.push(`- Recurring themes: ${memory.recurring_themes.join(", ")}`);
+    lines.push(`- Themes that sometimes come up: ${memory.recurring_themes.join(", ")}`);
   }
 
   if (memory.preferred_tone) {
-    lines.push(`- Preferred tone: ${memory.preferred_tone}`);
+    lines.push(`- Tone preference: ${memory.preferred_tone}`);
   }
 
   if (memory.energy_pattern) {
-    lines.push(`- Energy pattern: ${memory.energy_pattern}`);
+    lines.push(`- Energy tendency: ${memory.energy_pattern}`);
   }
 
   if (!lines.length) return "";
 
   return `
-Known user patterns (private):
+Soft context (use gently; not guaranteed):
+Confidence: ${level} (${score}/100)
+
 ${lines.join("\n")}
 
-Rules for using patterns:
-- Don't mention these patterns unless it helps the user feel understood.
-- Never label, diagnose, or claim certainty.
-- Prefer gentle reflection over advice.
+How to use this:
+- Treat as hints, not facts.
+- Only reflect a hint if it clearly helps the user feel understood.
+- Use tentative language: "maybe", "it sounds like", "sometimes", "could be".
+- Never claim certainty, never label/diagnose.
+- Never mention any database, memory system, or "patterns" explicitly.
 `.trim();
 }
 
@@ -88,11 +141,21 @@ export async function POST(req: NextRequest) {
 
     const userId = user.id;
 
-    // ✅ ETAPP 4.3: Preferences (ensure profile exists + read toggles)
-    const prefs = await ensureProfileAndGetPrefs(supabase, {
-      id: userId,
-      email: user.email ?? null,
-    });
+    // ✅ ETAPP 4.1: fetch user_memory (RLS protected)
+    let memory: UserMemoryRow | null = null;
+    try {
+      const { data, error } = await supabase
+        .from("user_memory")
+        .select(
+          "dominant_emotions, recurring_themes, preferred_tone, energy_pattern, updated_at"
+        )
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (!error) memory = (data as UserMemoryRow) ?? null;
+    } catch (e) {
+      console.error("Failed to fetch user_memory:", e);
+    }
 
     // ✅ ETAPP 2.3: access check
     const access = await ensureTrialAndCheckAccess(supabase, userId);
@@ -100,25 +163,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "PAYWALL", access }, { status: 402 });
     }
 
-    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content;
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((m) => m.role === "user")?.content;
 
-    // ✅ ETAPP 4.1: fetch user_memory (ONLY if prefs allow)
-    let memory: UserMemoryRow | null = null;
-    if (prefs.memoryEnabled) {
-      try {
-        const { data, error } = await supabase
-          .from("user_memory")
-          .select("dominant_emotions, recurring_themes, preferred_tone, energy_pattern")
-          .eq("user_id", userId)
-          .maybeSingle();
-
-        if (!error) memory = (data as UserMemoryRow) ?? null;
-      } catch (e) {
-        console.error("Failed to fetch user_memory:", e);
-      }
-    }
-
-    const memoryBlock = prefs.memoryEnabled ? buildMemoryBlock(memory) : "";
+    const memoryBlock = buildMemoryBlock(memory);
 
     const systemPrompt = `
 You are Ventfreely, a calm and supportive AI friend in a mental-health style chat.
@@ -128,7 +177,15 @@ Rules:
 - No professional advice.
 - No self-harm/violence/illegal instructions.
 - Warm, calm, short responses.
+- Ask 1 gentle question max when useful.
 - Reply in the same language as the user.
+- Do not over-assume; reflect what the user actually said.
+
+Tone & safety:
+- Prefer validation + small reflection over advice.
+- If the user wants action steps, give tiny, low-pressure steps.
+- Never diagnose. Never label the user.
+- Avoid certainty words like "clearly" or "definitely" about the user's inner state.
 
 ${memoryBlock ? `\n${memoryBlock}\n` : ""}
     `.trim();
@@ -221,7 +278,9 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
 
           if (summary) insertPayload.summary = summary;
 
-          const { error: insertError } = await supabase.from("conversations").insert(insertPayload);
+          const { error: insertError } = await supabase
+            .from("conversations")
+            .insert(insertPayload);
 
           if (insertError) {
             console.error("Error inserting conversation:", insertError);

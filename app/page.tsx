@@ -40,6 +40,26 @@ type WeekData =
     }
   | null;
 
+type InsightsCompare =
+  | {
+      thisWeek: {
+        range: { start: string; end: string };
+        completedDays: number;
+        topEmotion: string | null;
+        trend: "up" | "flat" | "down" | "na";
+        insights: string[];
+      };
+      lastWeek: {
+        range: { start: string; end: string };
+        completedDays: number;
+        topEmotion: string | null;
+        trend: "up" | "flat" | "down" | "na";
+        insights: string[];
+      };
+      change: { deltaDays: number; note: string };
+    }
+  | null;
+
 type GateState = "loading" | "ok" | "unauthorized" | "paywall" | "error";
 
 function trendLabel(t: "up" | "flat" | "down" | "na") {
@@ -216,6 +236,9 @@ export default function HomePage() {
 
           {/* ✅ Daily Status (your real data + gating) */}
           <DailyStatusCard />
+
+          {/* ✅ NEW: Insights preview (This week vs Last week) */}
+          <InsightsPreviewCard />
 
           {/* How it works (short + mission aligned) */}
           <div className="mt-10 text-left">
@@ -623,6 +646,204 @@ function DailyStatusCard() {
             Weekly report →
           </Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function InsightsPreviewCard() {
+  const [gate, setGate] = useState<GateState>("loading");
+  const [data, setData] = useState<InsightsCompare>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        setGate("loading");
+        const res = await fetch("/api/insights/compare", { cache: "no-store" });
+        if (!mounted) return;
+
+        if (res.status === 401) return setGate("unauthorized");
+        if (res.status === 402) return setGate("paywall");
+        if (!res.ok) return setGate("error");
+
+        const json = (await res.json()) as InsightsCompare;
+        setData(json);
+        setGate("ok");
+      } catch {
+        if (mounted) setGate("error");
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (gate === "loading") {
+    return (
+      <div className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          INSIGHTS (WEEKLY)
+        </p>
+        <p className="mt-2 text-[13px] text-white/70">Loading…</p>
+      </div>
+    );
+  }
+
+  if (gate === "unauthorized") {
+    return (
+      <div className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          INSIGHTS (WEEKLY)
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">Log in to view your insights.</p>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href="/login"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Log in
+          </Link>
+          <Link
+            href="/signup"
+            className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Create account
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (gate === "paywall") {
+    return (
+      <div className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          INSIGHTS (WEEKLY)
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">Insights are part of Premium.</p>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href={CHECKOUT_URL}
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Unlock Premium
+          </Link>
+          <Link
+            href="/insights"
+            className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Open insights
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (gate === "error") {
+    return (
+      <div className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          INSIGHTS (WEEKLY)
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">Couldn’t load insights. Try again soon.</p>
+
+        <div className="mt-5">
+          <Link
+            href="/insights"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Open insights
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const note = data?.change?.note ?? "Weekly comparison is ready.";
+  const thisDays = data?.thisWeek?.completedDays ?? 0;
+  const lastDays = data?.lastWeek?.completedDays ?? 0;
+
+  return (
+    <div className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5 text-left">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p
+            className="text-[12px] text-white/60"
+            style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+          >
+            INSIGHTS (WEEKLY)
+          </p>
+          <p className="mt-2 text-[14px] text-white/85">{note}</p>
+        </div>
+
+        <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[12px] text-white/85">
+          {thisDays}/7 vs {lastDays}/7
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <MiniStat label="This week" value={`${thisDays}/7`} />
+        <MiniStat label="Last week" value={`${lastDays}/7`} />
+      </div>
+
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Link
+          href="/insights"
+          className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+          style={{
+            fontFamily: "var(--font-subheading)",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+          }}
+        >
+          Open insights
+        </Link>
+
+        <Link href="/weekly" className="text-[12px] text-white/60 hover:text-white/80">
+          Weekly report →
+        </Link>
       </div>
     </div>
   );
