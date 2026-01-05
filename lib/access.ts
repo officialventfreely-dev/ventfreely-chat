@@ -65,7 +65,6 @@ export async function ensureTrialAndCheckAccess(
       );
 
     if (upsertErr) {
-      // Don't hard-deny immediately: could be a race where row was created elsewhere
       console.error(
         "ensureTrialAndCheckAccess: upsert trial row error:",
         upsertErr
@@ -92,8 +91,9 @@ export async function ensureTrialAndCheckAccess(
 
   const premiumUntil = (subRow.current_period_end as string | null) ?? null;
 
-  // --- PREMIUM LOGIC ---
-  // Shopify active/trialing may have current_period_end = NULL.
+  // --- PREMIUM LOGIC (HARDENED) ---
+  // We do NOT allow "infinite premium" by NULL current_period_end.
+  // Premium is active ONLY when current_period_end is in the future.
   const isCanceled =
     status === "canceled" ||
     status === "cancelled" ||
@@ -103,7 +103,7 @@ export async function ensureTrialAndCheckAccess(
   const premiumStatusOk = status === "active" || status === "trialing";
 
   const premiumActive =
-    !isCanceled && premiumStatusOk && (premiumUntil === null || isFuture(premiumUntil));
+    !isCanceled && premiumStatusOk && isFuture(premiumUntil);
 
   if (premiumActive) {
     return {
@@ -122,20 +122,19 @@ export async function ensureTrialAndCheckAccess(
   if (!trialEndsAt) {
     trialEndsAt = addDaysISO(3);
 
-    // Update only if still missing, to avoid overwriting other logic
     const { error: updErr } = await supabaseService
       .from("subscriptions")
       .update({
         trial_ends_at: trialEndsAt,
-        // Keep existing status if present, else default to trial
         status: rawStatus ?? "trial",
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId);
 
     if (updErr) {
-      // Again: don't hard deny immediately — re-read row and continue
       console.error("ensureTrialAndCheckAccess: set trial_ends_at error:", updErr);
+
+      // Re-read once more; don't hard-fail if DB updated elsewhere.
       const reread = await readLatestSubscriptionRow(supabaseSession, userId);
       if (reread) {
         subRow = reread;
