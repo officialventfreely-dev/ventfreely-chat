@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { Montserrat, Oswald, Barlow_Condensed } from "next/font/google";
+import { AuthNav } from "@/app/components/AuthNav";
 
 const CHECKOUT_URL =
   "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfX1lEc8TNBb/en-ee?_r=AQABKeCP8HYH1psvfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
@@ -91,23 +92,28 @@ export default function HomePage() {
             />
           </Link>
 
-          <nav className="hidden sm:flex items-center gap-1 text-[12px] text-white/80">
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/test">
-              Test
-            </Link>
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/chat">
-              Chat
-            </Link>
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/daily">
-              Daily
-            </Link>
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/weekly">
-              Weekly
-            </Link>
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/insights">
-              Insights
-            </Link>
-          </nav>
+          <div className="hidden sm:flex items-center gap-2">
+            <nav className="flex items-center gap-1 text-[12px] text-white/80">
+              <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/test">
+                Test
+              </Link>
+              <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/chat">
+                Chat
+              </Link>
+              <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/daily">
+                Daily
+              </Link>
+              <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/weekly">
+                Weekly
+              </Link>
+              <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/insights">
+                Insights
+              </Link>
+            </nav>
+
+            {/* ✅ Auth state (Account vs Log in / Sign up) */}
+            <AuthNav className="ml-1" />
+          </div>
         </div>
       </header>
 

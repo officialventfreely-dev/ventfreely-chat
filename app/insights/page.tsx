@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { WeeklyInsightsCard } from "@/app/components/WeeklyInsightsCard";
+import { AuthNav } from "@/app/components/AuthNav";
 
 export default function InsightsPage() {
   return (
@@ -12,37 +14,33 @@ export default function InsightsPage() {
       </div>
 
       <div className="relative mx-auto w-full max-w-xl px-4 pb-16 pt-8">
-        {/* Minimal header */}
-        <div className="mb-5 flex items-center justify-between">
-          <a href="/" className="text-sm font-semibold text-white/90">
+        {/* Header */}
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <Link href="/" className="text-sm font-semibold text-white/90">
             Ventfreely
-          </a>
+          </Link>
 
           <div className="flex items-center gap-3">
-            <a
-              href="/weekly"
-              className="text-xs text-white/70 hover:text-white/90"
-            >
+            <Link href="/weekly" className="text-xs text-white/70 hover:text-white/90">
               Weekly
-            </a>
-            <a
-              href="/daily"
-              className="text-xs text-white/70 hover:text-white/90"
-            >
+            </Link>
+            <Link href="/daily" className="text-xs text-white/70 hover:text-white/90">
               Daily
-            </a>
+            </Link>
+
+            <AuthNav />
           </div>
         </div>
 
         <WeeklyInsightsCard />
 
         <div className="mt-6">
-          <a
+          <Link
             href="/"
             className="inline-flex items-center justify-center rounded-xl bg-white/10 px-3 py-2 text-sm font-medium text-white"
           >
             Back to home
-          </a>
+          </Link>
         </div>
       </div>
     </main>

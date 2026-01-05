@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
+import { ensureProfileAndGetPrefs } from "@/lib/accountPrefs";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -33,9 +34,7 @@ function buildMemoryBlock(memory: UserMemoryRow | null) {
   const lines: string[] = [];
 
   if (memory.dominant_emotions?.length) {
-    lines.push(
-      `- Emotions that often appear: ${memory.dominant_emotions.join(", ")}`
-    );
+    lines.push(`- Emotions that often appear: ${memory.dominant_emotions.join(", ")}`);
   }
 
   if (memory.recurring_themes?.length) {
@@ -72,10 +71,7 @@ export async function POST(req: NextRequest) {
       | undefined;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return NextResponse.json(
-        { error: "No messages provided" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No messages provided" }, { status: 400 });
     }
 
     // ✅ SECURE: user comes from Supabase session cookie (not from body)
@@ -92,34 +88,37 @@ export async function POST(req: NextRequest) {
 
     const userId = user.id;
 
-    // ✅ ETAPP 4.1: fetch user_memory (RLS protected)
-    let memory: UserMemoryRow | null = null;
-    try {
-      const { data, error } = await supabase
-        .from("user_memory")
-        .select(
-          "dominant_emotions, recurring_themes, preferred_tone, energy_pattern"
-        )
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (!error) memory = (data as UserMemoryRow) ?? null;
-    } catch (e) {
-      console.error("Failed to fetch user_memory:", e);
-    }
+    // ✅ ETAPP 4.3: Preferences (ensure profile exists + read toggles)
+    const prefs = await ensureProfileAndGetPrefs(supabase, {
+      id: userId,
+      email: user.email ?? null,
+    });
 
     // ✅ ETAPP 2.3: access check
     const access = await ensureTrialAndCheckAccess(supabase, userId);
-
     if (!access.hasAccess) {
       return NextResponse.json({ error: "PAYWALL", access }, { status: 402 });
     }
 
-    const lastUserMessage = [...messages]
-      .reverse()
-      .find((m) => m.role === "user")?.content;
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content;
 
-    const memoryBlock = buildMemoryBlock(memory);
+    // ✅ ETAPP 4.1: fetch user_memory (ONLY if prefs allow)
+    let memory: UserMemoryRow | null = null;
+    if (prefs.memoryEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from("user_memory")
+          .select("dominant_emotions, recurring_themes, preferred_tone, energy_pattern")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (!error) memory = (data as UserMemoryRow) ?? null;
+      } catch (e) {
+        console.error("Failed to fetch user_memory:", e);
+      }
+    }
+
+    const memoryBlock = prefs.memoryEnabled ? buildMemoryBlock(memory) : "";
 
     const systemPrompt = `
 You are Ventfreely, a calm and supportive AI friend in a mental-health style chat.
@@ -179,8 +178,7 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
             max_tokens: SUMMARY_MAX_TOKENS,
           });
 
-          summary =
-            summaryCompletion.choices[0]?.message?.content?.trim() || null;
+          summary = summaryCompletion.choices[0]?.message?.content?.trim() || null;
         }
 
         const lastAssistantMessage = reply;
@@ -223,9 +221,7 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
 
           if (summary) insertPayload.summary = summary;
 
-          const { error: insertError } = await supabase
-            .from("conversations")
-            .insert(insertPayload);
+          const { error: insertError } = await supabase.from("conversations").insert(insertPayload);
 
           if (insertError) {
             console.error("Error inserting conversation:", insertError);
@@ -239,9 +235,6 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
     return NextResponse.json({ reply });
   } catch (err) {
     console.error("Error in /api/chat:", err);
-    return NextResponse.json(
-      { error: "Failed to generate reply" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to generate reply" }, { status: 500 });
   }
 }

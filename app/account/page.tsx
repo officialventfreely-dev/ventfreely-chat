@@ -1,442 +1,516 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabaseBrowser } from "../../lib/supabaseBrowser";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { Montserrat, Oswald, Barlow_Condensed } from "next/font/google";
+import { AppTopHeader } from "@/app/components/AppTopHeader";
 
-type SubRow = {
+const CHECKOUT_URL =
+  "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfX1lEc8TNBb/en-ee?_r=AQABKeCP8HYH1psvfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
+
+const bodyFont = Montserrat({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-body",
+});
+
+const subheadingFont = Oswald({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-subheading",
+});
+
+const headingFont = Barlow_Condensed({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-heading",
+});
+
+type AccessResult = {
+  hasAccess: boolean;
+  reason: "trial_active" | "premium_active" | "trial_expired";
+  trialEndsAt: string | null;
+  premiumUntil: string | null;
   status: string | null;
-  current_period_end: string | null; // ISO string
-  shopify_subscription_id?: string | null;
-  updated_at?: string | null;
-  created_at?: string | null;
 };
 
-const SHOPIFY_CHECKOUT_URL =
-  "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
+type Overview = {
+  email: string | null;
+  access: AccessResult;
+  prefs: {
+    memoryEnabled: boolean;
+    reflectionMemoryEnabled: boolean;
+  };
+};
 
-function formatDate(dateIso: string) {
-  const d = new Date(dateIso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
+type Gate = "loading" | "unauthorized" | "ok" | "error";
+
+function badgeText(access: AccessResult) {
+  if (access.reason === "premium_active") return "Premium active";
+  if (access.reason === "trial_active") return "Trial active";
+  return "Trial ended";
 }
 
-function daysLeft(endIso: string) {
-  const end = new Date(endIso).getTime();
-  const now = Date.now();
-  const diff = end - now;
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-  return days;
+function softDate(iso: string | null) {
+  if (!iso) return null;
+  const t = new Date(iso);
+  if (!Number.isFinite(t.getTime())) return null;
+  return t.toISOString().slice(0, 10);
 }
 
 export default function AccountPage() {
-  const router = useRouter();
+  const [gate, setGate] = useState<Gate>("loading");
+  const [data, setData] = useState<Overview | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
-  const [checking, setChecking] = useState(true);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const memoryEnabled = data?.prefs.memoryEnabled ?? true;
+  const reflectionMemoryEnabled = data?.prefs.reflectionMemoryEnabled ?? true;
 
-  const [sub, setSub] = useState<SubRow | null>(null);
-  const [subLoading, setSubLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const premiumLabel = useMemo(() => {
+    if (!data?.access) return "—";
+    return badgeText(data.access);
+  }, [data]);
 
-  const isLoggedIn = !!userEmail;
+  const untilText = useMemo(() => {
+    if (!data?.access) return null;
+    const prem = softDate(data.access.premiumUntil);
+    const trial = softDate(data.access.trialEndsAt);
 
-  const computed = useMemo(() => {
-    const now = new Date();
-    const end = sub?.current_period_end ? new Date(sub.current_period_end) : null;
+    if (data.access.reason === "premium_active" && prem) return `Until ${prem}`;
+    if (data.access.reason === "trial_active" && trial) return `Trial ends ${trial}`;
+    if (data.access.reason === "trial_expired") return "Upgrade to continue";
+    return null;
+  }, [data]);
 
-    const isActive =
-      (sub?.status ?? "") === "active" &&
-      !!end &&
-      !Number.isNaN(end.getTime()) &&
-      end > now;
-
-    const endLabel = sub?.current_period_end ? formatDate(sub.current_period_end) : "—";
-
-    const left = sub?.current_period_end ? daysLeft(sub.current_period_end) : null;
-
-    const daysLeftLabel =
-      isActive && typeof left === "number"
-        ? left <= 0
-          ? "Ends today"
-          : left === 1
-          ? "1 day left"
-          : `${left} days left`
-        : null;
-
-    return { isActive, endLabel, daysLeftLabel };
-  }, [sub]);
+  async function load() {
+    setGate("loading");
+    setToast(null);
+    try {
+      const res = await fetch("/api/account/overview", { cache: "no-store" });
+      if (res.status === 401) {
+        setGate("unauthorized");
+        setData(null);
+        return;
+      }
+      if (!res.ok) {
+        setGate("error");
+        setData(null);
+        return;
+      }
+      const json = (await res.json()) as Overview;
+      setData(json);
+      setGate("ok");
+    } catch {
+      setGate("error");
+      setData(null);
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      setChecking(true);
-      setError(null);
-
-      try {
-        const {
-          data: { session },
-          error: sessErr,
-        } = await supabaseBrowser.auth.getSession();
-
-        if (sessErr) throw sessErr;
-
-        const email = session?.user?.email ?? null;
-        const id = session?.user?.id ?? null;
-
-        setUserEmail(email);
-        setUserId(id);
-
-        if (!session?.user) {
-          // not logged in
-          setSub(null);
-          return;
-        }
-
-        setSubLoading(true);
-
-        // Fetch latest subscription row for this user
-        const { data, error: subErr } = await supabaseBrowser
-          .from("subscriptions")
-          .select("status,current_period_end,shopify_subscription_id,created_at,updated_at")
-          .eq("user_id", session.user.id)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (subErr) throw subErr;
-
-        setSub((data as SubRow) ?? null);
-      } catch (e: any) {
-        console.error("Account load error:", e);
-        setError("Couldn’t load your account. Please refresh and try again.");
-      } finally {
-        setSubLoading(false);
-        setChecking(false);
-      }
-    }
-
     load();
   }, []);
 
-  const handleLogout = async () => {
+  async function setPrefs(next: Partial<Overview["prefs"]>) {
+    if (!data) return;
+    setBusy("prefs");
+    setToast(null);
     try {
-      await supabaseBrowser.auth.signOut();
-      router.push("/");
-    } catch (e) {
-      console.error("Logout error:", e);
+      const res = await fetch("/api/account/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (res.status === 401) {
+        setGate("unauthorized");
+        return;
+      }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setToast(j?.error ?? "Could not update preferences.");
+        return;
+      }
+
+      // optimistic update
+      setData({
+        ...data,
+        prefs: { ...data.prefs, ...next },
+      });
+
+      setToast("Saved.");
+      window.setTimeout(() => setToast(null), 1200);
+    } finally {
+      setBusy(null);
     }
-  };
-
-  const handleGoCheckout = () => {
-    window.location.href = SHOPIFY_CHECKOUT_URL;
-  };
-
-  if (checking) {
-    return (
-      <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center">
-        <div className="rounded-2xl bg-white px-6 py-4 shadow-lg border border-purple-100 text-sm text-gray-600">
-          Loading your account…
-        </div>
-      </main>
-    );
   }
 
-  // Not logged in UI
-  if (!isLoggedIn) {
-    return (
-      <main className="min-h-screen w-full bg-[#FAF8FF] text-slate-900">
-        <header className="w-full bg-[#401268] text-white">
-          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-                <span className="text-xs font-semibold tracking-tight">VF</span>
-              </div>
-              <div className="flex flex-col leading-tight">
-                <span className="text-sm font-semibold tracking-tight">Ventfreely</span>
-                <span className="text-[11px] text-violet-100/80">Account Center</span>
-              </div>
-            </div>
+  async function doClear(kind: "memory" | "chat" | "daily") {
+    const map: Record<typeof kind, string> = {
+      memory: "/api/account/clear-memory",
+      chat: "/api/account/clear-chat",
+      daily: "/api/account/clear-daily",
+    };
 
-            <button
-              onClick={() => router.push("/login")}
-              className="rounded-full bg-white/10 px-3 py-2 text-[12px] hover:bg-white/15 transition"
-            >
-              Log in
-            </button>
-          </div>
-        </header>
+    const confirmText =
+      kind === "memory"
+        ? "Clear your saved memory?"
+        : kind === "chat"
+        ? "Clear your chat history?"
+        : "Clear your daily reflections?";
 
-        <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
-          <div className="rounded-2xl bg-white/90 border border-violet-200/70 shadow-lg p-6 max-w-xl">
-            <h1 className="text-lg font-semibold text-[#2A1740]">Account Center</h1>
-            <p className="text-sm text-slate-700 mt-2">
-              Please log in to view your subscription status and account details.
-            </p>
+    if (!window.confirm(confirmText)) return;
 
-            <div className="mt-5 flex gap-2">
-              <button
-                onClick={() => router.push("/login")}
-                className="px-4 py-2 rounded-full bg-[#401268] text-white text-sm font-semibold hover:brightness-110 active:scale-[0.98] transition"
-              >
-                Log in
-              </button>
-              <button
-                onClick={() => router.push("/signup")}
-                className="px-4 py-2 rounded-full bg-white border border-violet-200 text-sm font-semibold text-[#401268] hover:bg-violet-50 active:scale-[0.98] transition"
-              >
-                Sign up
-              </button>
-            </div>
-
-            <p className="text-[11px] text-slate-500 mt-4">
-              Tip: Use the same email when checking out so your subscription activates automatically.
-            </p>
-          </div>
-        </div>
-      </main>
-    );
+    setBusy(kind);
+    setToast(null);
+    try {
+      const res = await fetch(map[kind], { method: "POST" });
+      if (res.status === 401) {
+        setGate("unauthorized");
+        return;
+      }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setToast(j?.error ?? "Could not clear.");
+        return;
+      }
+      setToast("Cleared.");
+      window.setTimeout(() => setToast(null), 1200);
+    } finally {
+      setBusy(null);
+    }
   }
-
-  const { isActive, endLabel, daysLeftLabel } = computed;
 
   return (
-    <main className="min-h-screen w-full bg-[#FAF8FF] text-slate-900">
-      {/* Header */}
-      <header className="w-full bg-[#401268] text-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-              <span className="text-xs font-semibold tracking-tight">VF</span>
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span className="text-sm font-semibold tracking-tight">Ventfreely</span>
-              <span className="text-[11px] text-violet-100/80">Account Center</span>
-            </div>
-          </div>
+    <main
+      className={[
+        "min-h-screen w-full",
+        bodyFont.variable,
+        subheadingFont.variable,
+        headingFont.variable,
+      ].join(" ")}
+      style={{ fontFamily: "var(--font-body)", color: "white" }}
+    >
+      {/* Background */}
+      <div className="fixed inset-0 -z-10">
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(900px 500px at 50% 0%, rgba(255,255,255,0.10), transparent 60%), linear-gradient(180deg, #0B1634 0%, #07102A 55%, #061027 100%)",
+          }}
+        />
+      </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => router.push("/chat")}
-              className="rounded-full bg-white/10 px-3 py-2 text-[12px] hover:bg-white/15 transition"
-            >
-              Back to chat
-            </button>
-            <button
-              onClick={handleLogout}
-              className="rounded-full bg-white/10 px-3 py-2 text-[12px] hover:bg-white/15 transition"
-            >
-              Log out
-            </button>
-          </div>
-        </div>
-      </header>
+      <AppTopHeader />
 
-      {/* Content */}
-      <div className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-8">
-        <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)] items-start">
-          {/* Left */}
-          <section className="space-y-6">
-            <div className="rounded-2xl bg-white/90 border border-violet-200/70 shadow-lg p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h1 className="text-lg md:text-xl font-semibold tracking-tight text-[#2A1740]">
-                    Your account
-                  </h1>
-                  <p className="text-[12px] text-slate-600 mt-1">
-                    Everything about your access, in one place.
-                  </p>
-                </div>
+      <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
+        <section className="mx-auto max-w-xl text-center">
+          <h1
+            className="text-5xl font-semibold md:text-6xl"
+            style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
+          >
+            ACCOUNT
+          </h1>
 
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-violet-50 border border-violet-200 px-3 py-1 text-[11px] text-slate-700">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#A268F5]" />
-                    {userEmail}
-                  </span>
-                </div>
+          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/85">
+            Manage privacy, memory, and your data.
+          </p>
+
+          {/* gate */}
+          {gate === "loading" && (
+            <Card>
+              <p className="text-[13px] text-white/70">Loading…</p>
+            </Card>
+          )}
+
+          {gate === "unauthorized" && (
+            <Card>
+              <p
+                className="text-[12px] text-white/60"
+                style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+              >
+                LOG IN REQUIRED
+              </p>
+              <p className="mt-2 text-[14px] text-white/85">
+                Please log in to manage your account.
+              </p>
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                <Link
+                  href="/login"
+                  className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+                  style={{
+                    fontFamily: "var(--font-subheading)",
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/signup"
+                  className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-4 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+                  style={{
+                    fontFamily: "var(--font-subheading)",
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Create account
+                </Link>
               </div>
+            </Card>
+          )}
 
-              {/* Status card */}
-              <div className="mt-5 rounded-2xl border border-violet-200/70 bg-gradient-to-br from-white to-violet-50 p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-[12px] text-slate-600">Subscription status</div>
+          {gate === "error" && (
+            <Card>
+              <p
+                className="text-[12px] text-white/60"
+                style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+              >
+                SOMETHING WENT WRONG
+              </p>
+              <p className="mt-2 text-[14px] text-white/85">
+                Couldn’t load your account. Try again.
+              </p>
 
-                    {subLoading ? (
-                      <div className="mt-2 text-sm text-slate-700">Checking subscription…</div>
-                    ) : isActive ? (
-                      <>
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className="text-sm font-semibold text-emerald-700">
-                            ✅ Active
-                          </span>
-                          {daysLeftLabel && (
-                            <span className="text-[11px] rounded-full bg-white border border-violet-200 px-2 py-1 text-slate-700">
-                              {daysLeftLabel}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-2 text-[12px] text-slate-700">
-                          Access until <span className="font-semibold">{endLabel}</span>
-                        </div>
-                        <div className="mt-2 text-[11px] text-slate-500">
-                          If you renew with the same email, access continues automatically.
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className="text-sm font-semibold text-red-700">🔒 Inactive</span>
-                          <span className="text-[11px] rounded-full bg-white border border-violet-200 px-2 py-1 text-slate-700">
-                            No active access
-                          </span>
-                        </div>
-                        <div className="mt-2 text-[12px] text-slate-700">
-                          To continue chatting without limits, renew your access.
-                        </div>
-                        <div className="mt-2 text-[11px] text-slate-500">
-                          Important: checkout email must match your Ventfreely account email.
-                        </div>
-                      </>
-                    )}
+              <button
+                onClick={load}
+                className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+                style={{
+                  fontFamily: "var(--font-subheading)",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Retry
+              </button>
+            </Card>
+          )}
+
+          {gate === "ok" && data && (
+            <>
+              {/* status */}
+              <div className="mt-8 grid gap-3 text-left">
+                <Card>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p
+                        className="text-[12px] text-white/60"
+                        style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+                      >
+                        STATUS
+                      </p>
+                      <p className="mt-2 text-[14px] text-white/85">
+                        {data.email ?? "—"}
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[12px] text-white/85">
+                        {premiumLabel}
+                      </span>
+                      {untilText ? (
+                        <p className="mt-2 text-[11px] text-white/55">{untilText}</p>
+                      ) : null}
+                    </div>
                   </div>
 
-                  {/* Badge */}
-                  <div
-                    className={`shrink-0 rounded-2xl border px-3 py-2 text-[11px] ${
-                      isActive
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : "border-amber-200 bg-amber-50 text-amber-900"
-                    }`}
-                  >
-                    {isActive ? "Unlimited chat" : "Limited"}
-                  </div>
-                </div>
-
-                {/* CTA */}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {isActive ? (
-                    <>
-                      <button
-                        onClick={() => router.push("/chat")}
-                        className="px-4 py-2 rounded-full bg-[#401268] text-white text-sm font-semibold shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition"
+                  {data.access.reason === "trial_expired" ? (
+                    <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                      <Link
+                        href={CHECKOUT_URL}
+                        className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+                        style={{
+                          fontFamily: "var(--font-subheading)",
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                        }}
                       >
-                        Open chat
-                      </button>
-                      <button
-                        onClick={handleGoCheckout}
-                        className="px-4 py-2 rounded-full bg-white border border-violet-200 text-sm font-semibold text-[#401268] hover:bg-violet-50 active:scale-[0.98] transition"
+                        Unlock Premium
+                      </Link>
+                      <Link
+                        href="/daily"
+                        className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-4 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+                        style={{
+                          fontFamily: "var(--font-subheading)",
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                        }}
                       >
-                        Renew / extend (14 days)
-                      </button>
-                    </>
+                        Open Daily
+                      </Link>
+                    </div>
                   ) : (
-                    <>
-                      <button
-                        onClick={handleGoCheckout}
-                        className="px-4 py-2 rounded-full bg-[#401268] text-white text-sm font-semibold shadow-sm shadow-[#401268]/30 hover:brightness-110 active:scale-[0.98] transition"
-                      >
-                        Renew access · €2.99
-                      </button>
-                      <button
-                        onClick={() => router.push("/chat")}
-                        className="px-4 py-2 rounded-full bg-white border border-violet-200 text-sm font-semibold text-[#401268] hover:bg-violet-50 active:scale-[0.98] transition"
-                      >
-                        Back to chat
-                      </button>
-                    </>
+                    <div className="mt-5 flex items-center justify-between">
+                      <Link href="/chat" className="text-[12px] text-white/60 hover:text-white/80">
+                        Chat →
+                      </Link>
+                      <Link href="/insights" className="text-[12px] text-white/60 hover:text-white/80">
+                        Insights →
+                      </Link>
+                    </div>
                   )}
-                </div>
-              </div>
+                </Card>
 
-              {/* Error */}
-              {error && (
-                <div className="mt-4 text-[11px] text-amber-800 bg-amber-50/80 border border-amber-100 rounded-2xl px-4 py-3">
-                  {error}
-                </div>
-              )}
-            </div>
+                {/* preferences */}
+                <Card>
+                  <p
+                    className="text-[12px] text-white/60"
+                    style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+                  >
+                    PREFERENCES
+                  </p>
 
-            {/* Extra: helpful explanation (reduces support tickets) */}
-            <div className="rounded-2xl bg-white/90 border border-violet-200/70 shadow-lg p-6">
-              <h2 className="text-sm font-semibold text-[#2A1740]">How activation works</h2>
-              <p className="text-[12px] text-slate-700 mt-2 leading-relaxed">
-                Your access activates when we detect a successful Shopify payment made with the{" "}
-                <span className="font-semibold">same email</span> as your Ventfreely account.
-              </p>
+                  <div className="mt-4 space-y-3">
+                    <ToggleRow
+                      title="Use memory in chat"
+                      desc="If enabled, Ventfreely can use your saved memory to feel more consistent."
+                      value={memoryEnabled}
+                      disabled={busy === "prefs"}
+                      onChange={(v) => setPrefs({ memoryEnabled: v })}
+                    />
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <div className="rounded-2xl border border-violet-200/70 bg-white p-4">
-                  <div className="text-[11px] font-semibold text-[#2A1740]">Correct</div>
-                  <div className="mt-1 text-[11px] text-slate-700">
-                    Account email = checkout email
+                    <div className="h-px bg-white/10" />
+
+                    <ToggleRow
+                      title="Save reflections into memory"
+                      desc="If enabled, your Daily reflections can update your saved memory."
+                      value={reflectionMemoryEnabled}
+                      disabled={busy === "prefs"}
+                      onChange={(v) => setPrefs({ reflectionMemoryEnabled: v })}
+                    />
                   </div>
-                </div>
-                <div className="rounded-2xl border border-violet-200/70 bg-white p-4">
-                  <div className="text-[11px] font-semibold text-[#2A1740]">Common issue</div>
-                  <div className="mt-1 text-[11px] text-slate-700">
-                    Different email at checkout → access won’t auto-activate
+
+                  <p className="mt-4 text-[11px] text-white/50">
+                    Your data stays private. You can clear everything any time.
+                  </p>
+                </Card>
+
+                {/* data controls */}
+                <Card>
+                  <p
+                    className="text-[12px] text-white/60"
+                    style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+                  >
+                    DATA CONTROLS
+                  </p>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <ActionButton
+                      label={busy === "memory" ? "Clearing…" : "Clear memory"}
+                      onClick={() => doClear("memory")}
+                      disabled={!!busy}
+                    />
+                    <ActionButton
+                      label={busy === "chat" ? "Clearing…" : "Clear chat"}
+                      onClick={() => doClear("chat")}
+                      disabled={!!busy}
+                    />
+                    <ActionButton
+                      label={busy === "daily" ? "Clearing…" : "Clear daily"}
+                      onClick={() => doClear("daily")}
+                      disabled={!!busy}
+                    />
                   </div>
-                </div>
-              </div>
 
-              <div className="mt-4 text-[11px] text-slate-500">
-                If you used a different email by accident, contact support and we can help.
-              </div>
-            </div>
-          </section>
+                  <p className="mt-4 text-[11px] text-white/50">
+                    Clearing is permanent. This won’t affect your subscription.
+                  </p>
+                </Card>
 
-          {/* Right */}
-          <aside className="space-y-4">
-            <div className="rounded-2xl bg-white/90 border border-violet-200/70 shadow-lg p-5">
-              <h3 className="text-sm font-semibold text-[#2A1740]">Account details</h3>
-              <div className="mt-3 space-y-2 text-[12px] text-slate-700">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Email</span>
-                  <span className="font-medium">{userEmail}</span>
-                </div>
+                {/* toast */}
+                {toast ? (
+                  <div className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-center text-[12px] text-white/85">
+                    {toast}
+                  </div>
+                ) : null}
 
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">User ID</span>
-                  <span className="font-mono text-[11px] text-slate-600">
-                    {userId ? `${userId.slice(0, 6)}…${userId.slice(-4)}` : "—"}
+                <div className="mt-2 flex items-center justify-between">
+                  <Link href="/" className="text-[12px] text-white/60 hover:text-white/80">
+                    Back home
+                  </Link>
+                  <span className="text-[11px] text-white/45">
+                    Control builds trust.
                   </span>
                 </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Access until</span>
-                  <span className="font-medium">{isActive ? endLabel : "—"}</span>
-                </div>
               </div>
-            </div>
-
-            <div className="rounded-2xl bg-white/90 border border-violet-200/70 shadow-lg p-5">
-              <h3 className="text-sm font-semibold text-[#2A1740]">Quick actions</h3>
-              <div className="mt-3 space-y-2">
-                <button
-                  onClick={() => router.push("/chat")}
-                  className="w-full px-4 py-2 rounded-full bg-white border border-violet-200 text-sm font-semibold text-[#401268] hover:bg-violet-50 active:scale-[0.98] transition"
-                >
-                  Open chat
-                </button>
-                <button
-                  onClick={handleGoCheckout}
-                  className="w-full px-4 py-2 rounded-full bg-[#401268] text-white text-sm font-semibold hover:brightness-110 active:scale-[0.98] transition"
-                >
-                  Go to checkout
-                </button>
-              </div>
-              <p className="mt-3 text-[11px] text-slate-500">
-                Checkout email must match your account email.
-              </p>
-            </div>
-          </aside>
-        </div>
+            </>
+          )}
+        </section>
       </div>
     </main>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div className="mt-8 rounded-3xl border border-white/15 bg-white/5 p-5 text-left">{children}</div>;
+}
+
+function ToggleRow({
+  title,
+  desc,
+  value,
+  disabled,
+  onChange,
+}: {
+  title: string;
+  desc: string;
+  value: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-[14px] text-white/90">{title}</p>
+        <p className="mt-1 text-[12px] text-white/60 leading-relaxed">{desc}</p>
+      </div>
+
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange(!value)}
+        className={[
+          "relative h-8 w-14 flex-shrink-0 rounded-full border transition",
+          value ? "border-white/40 bg-white/25" : "border-white/15 bg-white/10",
+          disabled ? "opacity-60 cursor-not-allowed" : "hover:bg-white/15",
+        ].join(" ")}
+        aria-pressed={value}
+      >
+        <span
+          className={[
+            "absolute top-1 h-6 w-6 rounded-full bg-white transition-all",
+            value ? "left-7" : "left-1",
+          ].join(" ")}
+        />
+      </button>
+    </div>
+  );
+}
+
+function ActionButton({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-[12px] transition",
+        "border border-white/15 bg-white/10 text-white/85 hover:bg-white/15",
+        "disabled:opacity-60 disabled:cursor-not-allowed",
+      ].join(" ")}
+      style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.06em", textTransform: "uppercase" }}
+    >
+      {label}
+    </button>
   );
 }

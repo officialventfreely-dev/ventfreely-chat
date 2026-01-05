@@ -1,11 +1,10 @@
-// app/daily/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Montserrat, Oswald, Barlow_Condensed } from "next/font/google";
 import { EMOTIONS, ENERGIES, type Emotion, type Energy } from "@/lib/dailyConfig";
+import { AppTopHeader } from "@/app/components/AppTopHeader";
 
 const CHECKOUT_URL =
   "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfX1lEc8TNBb/en-ee?_r=AQABKeCP8HYH1psvfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
@@ -304,21 +303,8 @@ export default function DailyPage() {
         />
       </div>
 
-      {/* Header (smaller ~2x, same as Home) */}
-      <header className="w-full bg-[#401268]">
-        <div className="mx-auto flex max-w-5xl items-center justify-center px-4 py-1.5">
-          <Link href="/" className="flex items-center justify-center">
-            <Image
-              src="/brand/logo.svg"
-              alt="Ventfreely"
-              width={92}
-              height={24}
-              priority
-              className="opacity-95"
-            />
-          </Link>
-        </div>
-      </header>
+      {/* ✅ Unified header */}
+      <AppTopHeader active="daily" />
 
       <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
         <section className="mx-auto max-w-xl text-center">
@@ -342,10 +328,7 @@ export default function DailyPage() {
 
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
               <div
-                className={[
-                  "h-full rounded-full transition-all duration-500",
-                  progressClass,
-                ].join(" ")}
+                className={["h-full rounded-full transition-all duration-500", progressClass].join(" ")}
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
@@ -380,12 +363,7 @@ export default function DailyPage() {
           )}
 
           {!loading && gate === "error" && (
-            <SimpleCard
-              title="SOMETHING WENT WRONG"
-              text="Please try again in a moment."
-              primaryHref="/"
-              primaryText="Back home"
-            />
+            <SimpleCard title="SOMETHING WENT WRONG" text="Please try again in a moment." primaryHref="/" primaryText="Back home" />
           )}
 
           {/* Completed */}
@@ -398,28 +376,19 @@ export default function DailyPage() {
               <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
                 <p
                   className="text-[12px] text-white/60"
-                  style={{
-                    fontFamily: "var(--font-subheading)",
-                    letterSpacing: "0.08em",
-                  }}
+                  style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
                 >
                   COMPLETED TODAY ✅
                 </p>
 
-                <p className="mt-2 text-[15px] text-white/90">
-                  “{existing.positive_text}”
-                </p>
+                <p className="mt-2 text-[15px] text-white/90">“{existing.positive_text}”</p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Tag>
-                    {EMOTION_CHOICES.find((c) => c.value === existing.emotion)
-                      ?.emoji}{" "}
-                    {existing.emotion}
+                    {EMOTION_CHOICES.find((c) => c.value === existing.emotion)?.emoji} {existing.emotion}
                   </Tag>
                   <Tag>
-                    {ENERGY_CHOICES.find((c) => c.value === existing.energy)
-                      ?.emoji}{" "}
-                    {existing.energy}
+                    {ENERGY_CHOICES.find((c) => c.value === existing.energy)?.emoji} {existing.energy}
                   </Tag>
                 </div>
 
@@ -457,15 +426,11 @@ export default function DailyPage() {
               </div>
             </div>
           ) : gate === "ok" ? (
-            // Form
             <div className="mt-10 text-left">
               {/* Step 1 */}
               <div className="rounded-3xl border border-white/15 bg-white/5 p-4">
                 <p className="text-[14px] text-white/90">
-                  <span
-                    className="mr-2 inline-block text-white/70"
-                    style={{ fontFamily: "var(--font-subheading)" }}
-                  >
+                  <span className="mr-2 inline-block text-white/70" style={{ fontFamily: "var(--font-subheading)" }}>
                     1.
                   </span>
                   What is one good thing that happened today?
@@ -483,9 +448,7 @@ export default function DailyPage() {
                     ].join(" ")}
                     maxLength={500}
                   />
-                  <p className="mt-2 text-[11px] text-white/50">
-                    {text.trim().length}/500
-                  </p>
+                  <p className="mt-2 text-[11px] text-white/50">{text.trim().length}/500</p>
                 </div>
               </div>
 
@@ -500,70 +463,63 @@ export default function DailyPage() {
                 ].join(" ")}
               >
                 <p className="text-[14px] text-white/90">
-                  <span
-                    className="mr-2 inline-block text-white/70"
-                    style={{ fontFamily: "var(--font-subheading)" }}
-                  >
+                  <span className="mr-2 inline-block text-white/70" style={{ fontFamily: "var(--font-subheading)" }}>
                     2.
                   </span>
                   Pick one emotion.
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                  {EMOTION_CHOICES.filter((c) =>
-                    (EMOTIONS as readonly string[]).includes(c.value)
-                  ).map(({ value, emoji, label, sub, accent, glow }) => {
-                    const selected = emotion === value;
-                    const depth = clamp(12, 10, 18);
+                  {EMOTION_CHOICES.filter((c) => (EMOTIONS as readonly string[]).includes(c.value)).map(
+                    ({ value, emoji, label, sub, accent, glow }) => {
+                      const selected = emotion === value;
+                      const depth = clamp(12, 10, 18);
 
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => handlePickEmotion(value)}
-                        aria-pressed={selected}
-                        className={[
-                          "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
-                          "focus:outline-none focus:ring-2 focus:ring-white/30",
-                          "active:scale-[0.99]",
-                          selected
-                            ? `border-white/70 bg-white/10 ${glow}`
-                            : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
-                        ].join(" ")}
-                        style={{
-                          fontFamily: "var(--font-subheading)",
-                          boxShadow: selected
-                            ? undefined
-                            : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-2xl leading-none">{emoji}</span>
-                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                            pick
-                          </span>
-                        </div>
-
-                        <div className="mt-2">
-                          <div className="text-[13px] font-semibold text-white">
-                            {label}
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => handlePickEmotion(value)}
+                          aria-pressed={selected}
+                          className={[
+                            "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
+                            "focus:outline-none focus:ring-2 focus:ring-white/30",
+                            "active:scale-[0.99]",
+                            selected
+                              ? `border-white/70 bg-white/10 ${glow}`
+                              : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
+                          ].join(" ")}
+                          style={{
+                            fontFamily: "var(--font-subheading)",
+                            boxShadow: selected ? undefined : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-2xl leading-none">{emoji}</span>
+                            <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                              pick
+                            </span>
                           </div>
-                          <div className="text-[11px] text-white/60">{sub}</div>
-                        </div>
 
-                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className={[
-                              "h-full rounded-full transition-all duration-300",
-                              accent,
-                              selected ? "opacity-100" : "opacity-70",
-                            ].join(" ")}
-                            style={{ width: selected ? "100%" : "55%" }}
-                          />
-                        </div>
-                      </button>
-                    );
-                  })}
+                          <div className="mt-2">
+                            <div className="text-[13px] font-semibold text-white">{label}</div>
+                            <div className="text-[11px] text-white/60">{sub}</div>
+                          </div>
+
+                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className={[
+                                "h-full rounded-full transition-all duration-300",
+                                accent,
+                                selected ? "opacity-100" : "opacity-70",
+                              ].join(" ")}
+                              style={{ width: selected ? "100%" : "55%" }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    }
+                  )}
                 </div>
 
                 <div className="h-px bg-white/10" />
@@ -580,70 +536,63 @@ export default function DailyPage() {
                 ].join(" ")}
               >
                 <p className="text-[14px] text-white/90">
-                  <span
-                    className="mr-2 inline-block text-white/70"
-                    style={{ fontFamily: "var(--font-subheading)" }}
-                  >
+                  <span className="mr-2 inline-block text-white/70" style={{ fontFamily: "var(--font-subheading)" }}>
                     3.
                   </span>
                   Pick your energy.
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                  {ENERGY_CHOICES.filter((c) =>
-                    (ENERGIES as readonly string[]).includes(c.value)
-                  ).map(({ value, emoji, label, sub, accent, glow, pct }) => {
-                    const selected = energy === value;
-                    const depth = clamp(12, 10, 18);
+                  {ENERGY_CHOICES.filter((c) => (ENERGIES as readonly string[]).includes(c.value)).map(
+                    ({ value, emoji, label, sub, accent, glow, pct }) => {
+                      const selected = energy === value;
+                      const depth = clamp(12, 10, 18);
 
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => handlePickEnergy(value)}
-                        aria-pressed={selected}
-                        className={[
-                          "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
-                          "focus:outline-none focus:ring-2 focus:ring-white/30",
-                          "active:scale-[0.99]",
-                          selected
-                            ? `border-white/70 bg-white/10 ${glow}`
-                            : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
-                        ].join(" ")}
-                        style={{
-                          fontFamily: "var(--font-subheading)",
-                          boxShadow: selected
-                            ? undefined
-                            : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-2xl leading-none">{emoji}</span>
-                          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                            {pct}%
-                          </span>
-                        </div>
-
-                        <div className="mt-2">
-                          <div className="text-[13px] font-semibold text-white">
-                            {label}
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => handlePickEnergy(value)}
+                          aria-pressed={selected}
+                          className={[
+                            "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
+                            "focus:outline-none focus:ring-2 focus:ring-white/30",
+                            "active:scale-[0.99]",
+                            selected
+                              ? `border-white/70 bg-white/10 ${glow}`
+                              : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
+                          ].join(" ")}
+                          style={{
+                            fontFamily: "var(--font-subheading)",
+                            boxShadow: selected ? undefined : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-2xl leading-none">{emoji}</span>
+                            <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                              {pct}%
+                            </span>
                           </div>
-                          <div className="text-[11px] text-white/60">{sub}</div>
-                        </div>
 
-                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className={[
-                              "h-full rounded-full transition-all duration-300",
-                              accent,
-                              selected ? "opacity-100" : "opacity-70",
-                            ].join(" ")}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </button>
-                    );
-                  })}
+                          <div className="mt-2">
+                            <div className="text-[13px] font-semibold text-white">{label}</div>
+                            <div className="text-[11px] text-white/60">{sub}</div>
+                          </div>
+
+                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className={[
+                                "h-full rounded-full transition-all duration-300",
+                                accent,
+                                selected ? "opacity-100" : "opacity-70",
+                              ].join(" ")}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    }
+                  )}
                 </div>
 
                 <div className="h-px bg-white/10" />
