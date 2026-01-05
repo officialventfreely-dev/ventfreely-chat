@@ -1,4 +1,3 @@
-// app/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -34,6 +33,8 @@ type WeekData =
       topEmotion: string | null;
       trend: "up" | "flat" | "down" | "na";
       series: Array<{ date: string; score: number; emotion: string; energy: string }>;
+      trendLabel?: string;
+      suggestion?: string;
     }
   | null;
 
@@ -75,9 +76,9 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Header (smaller ~2x) */}
+      {/* Header (small) */}
       <header className="w-full bg-[#401268]">
-        <div className="mx-auto flex max-w-5xl items-center justify-center px-4 py-1.5">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-1.5">
           <Link href="/" className="flex items-center justify-center">
             <Image
               src="/brand/logo.svg"
@@ -88,12 +89,29 @@ export default function HomePage() {
               className="opacity-95"
             />
           </Link>
+
+          {/* Small nav (optional but useful) */}
+          <nav className="hidden sm:flex items-center gap-1 text-[12px] text-white/80">
+            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/test">
+              Test
+            </Link>
+            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/chat">
+              Chat
+            </Link>
+            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/daily">
+              Daily
+            </Link>
+            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/weekly">
+              Weekly
+            </Link>
+          </nav>
         </div>
       </header>
 
       {/* Content */}
       <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
         <section className="mx-auto max-w-xl text-center">
+          {/* UPDATED headline (no “SIMPLICITY”) */}
           <h1
             className="text-5xl font-semibold md:text-6xl"
             style={{
@@ -101,7 +119,7 @@ export default function HomePage() {
               letterSpacing: "0.02em",
             }}
           >
-            SIMPLICITY
+            A CALM SPACE
             <span className="block">WHEN YOU NEED IT MOST</span>
           </h1>
 
@@ -210,7 +228,7 @@ export default function HomePage() {
               <StepCard title="2 · Vent safely">
                 Say what you’ve been holding. Ventfreely responds gently.
               </StepCard>
-              <StepCard title="3 · Keep it simple">
+              <StepCard title="3 · Keep it going">
                 Try it. If it helps, unlock more time for a small fee.
               </StepCard>
             </div>
@@ -286,9 +304,28 @@ function DailyStatusCard() {
   const completedDays = data?.completedDays ?? 0;
   const trend = data?.trend ?? "na";
 
+  const seriesDates = useMemo(() => new Set((data?.series ?? []).map((s) => s.date)), [data]);
+
   const todayDone = useMemo(() => {
-    if (!data?.range?.end || !data?.series) return false;
-    return data.series.some((s) => s.date === data.range.end);
+    if (!data?.range?.end) return false;
+    return seriesDates.has(data.range.end);
+  }, [data, seriesDates]);
+
+  // Build 7 dates from start->end (string-based, minimal)
+  const weekDates = useMemo(() => {
+    if (!data?.range?.start || !data?.range?.end) return [];
+    const out: string[] = [];
+    // start/end are YYYY-MM-DD
+    const start = new Date(data.range.start + "T00:00:00Z");
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      const yyyy = d.getUTCFullYear();
+      const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(d.getUTCDate()).padStart(2, "0");
+      out.push(`${yyyy}-${mm}-${dd}`);
+    }
+    return out;
   }, [data]);
 
   if (gate === "loading") {
@@ -431,10 +468,28 @@ function DailyStatusCard() {
 
         <div className="text-right">
           <p className="text-[11px] text-white/50">Trend</p>
-          <p className="text-[16px] font-semibold text-white/85">
-            {trendLabel(trend)}
-          </p>
+          <p className="text-[16px] font-semibold text-white/85">{trendLabel(trend)}</p>
         </div>
+      </div>
+
+      {/* 7-day dots */}
+      <div className="mt-4 flex items-center gap-1.5">
+        {weekDates.map((d) => {
+          const done = seriesDates.has(d);
+          return (
+            <span
+              key={d}
+              className={[
+                "h-2.5 w-2.5 rounded-full border",
+                done
+                  ? "bg-white/85 border-white/30"
+                  : "bg-transparent border-white/20",
+              ].join(" ")}
+              title={d}
+            />
+          );
+        })}
+        <span className="ml-2 text-[11px] text-white/55">{completedDays}/7</span>
       </div>
 
       <div className="mt-5 grid grid-cols-3 gap-3">
