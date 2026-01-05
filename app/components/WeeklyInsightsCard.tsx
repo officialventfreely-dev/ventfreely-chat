@@ -1,6 +1,3 @@
-// ===============================
-// FILE: app/components/WeeklyInsightsCard.tsx
-// ===============================
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -69,7 +66,6 @@ export function WeeklyInsightsCard() {
 
       const data = (await res.json()) as WeeklyInsightsResponse;
 
-      // Defensive normalization (keep UI stable)
       setState({
         kind: "ok",
         data: {
@@ -190,7 +186,19 @@ export function WeeklyInsightsCard() {
           <div>
             <div className="flex flex-wrap gap-2">
               <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-1 text-xs text-white/85">
-                Days: <span className="ml-1 font-semibold text-white">{state.data.completedDays}</span>/7
+                {state.data.completedDays === 0 ? (
+                  <>
+                    Days: <span className="ml-1 font-semibold text-white">No check-ins yet</span>
+                  </>
+                ) : (
+                  <>
+                    Days:{" "}
+                    <span className="ml-1 font-semibold text-white">
+                      {state.data.completedDays}
+                    </span>
+                    /7
+                  </>
+                )}
               </span>
 
               <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-1 text-xs text-white/85">
@@ -214,6 +222,24 @@ export function WeeklyInsightsCard() {
                 )
               )}
             </div>
+
+            {/* Soft navigation CTA when empty week */}
+            {state.data.completedDays === 0 && (
+              <div className="mt-3 flex gap-2">
+                <a
+                  href="/daily"
+                  className="inline-flex items-center justify-center rounded-xl bg-white px-3 py-2 text-sm font-medium text-black"
+                >
+                  Go to Daily
+                </a>
+                <a
+                  href="/weekly"
+                  className="inline-flex items-center justify-center rounded-xl bg-white/10 px-3 py-2 text-sm font-medium text-white"
+                >
+                  View Weekly
+                </a>
+              </div>
+            )}
 
             <div className="mt-3 text-[11px] text-white/55">
               This is a gentle snapshot — not a diagnosis or advice.
