@@ -1,32 +1,12 @@
-// FILE: app/page.tsx
 "use client";
 
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { Montserrat, Oswald, Barlow_Condensed } from "next/font/google";
 import { AuthNav } from "@/app/components/AuthNav";
 
 const CHECKOUT_URL =
   "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfX1lEc8TNBb/en-ee?_r=AQABKeCP8HYH1psvfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
-
-const bodyFont = Montserrat({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-body",
-});
-
-const subheadingFont = Oswald({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-subheading",
-});
-
-const headingFont = Barlow_Condensed({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-heading",
-});
 
 type WeekData =
   | {
@@ -78,35 +58,21 @@ function trendText(t: "up" | "flat" | "down" | "na") {
 
 export default function HomePage() {
   return (
-    <main
-      className={[
-        "min-h-screen w-full",
-        bodyFont.variable,
-        subheadingFont.variable,
-        headingFont.variable,
-      ].join(" ")}
-      style={{ fontFamily: "var(--font-body)", color: "white" }}
-    >
-      {/* Background */}
+    <main className="min-h-screen w-full">
+      {/* Background (global in globals.css, this is just a tiny “depth” layer) */}
       <div className="fixed inset-0 -z-10">
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(900px 500px at 50% 0%, rgba(255,255,255,0.10), transparent 60%), linear-gradient(180deg, #0B1634 0%, #07102A 55%, #061027 100%)",
-          }}
-        />
+        <div className="absolute inset-0" style={{ background: "var(--vf-bg)" }} />
       </div>
 
-      {/* Header */}
-      <header className="w-full bg-[#401268]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-1.5">
-          <Link href="/" className="flex items-center justify-center">
+      {/* Header (smaller + cleaner) */}
+      <header className="w-full bg-[var(--vf-header)]">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-1">
+          <Link href="/" className="flex items-center">
             <Image
               src="/brand/logo.svg"
               alt="Ventfreely"
-              width={92}
-              height={24}
+              width={86}
+              height={22}
               priority
               className="opacity-95"
             />
@@ -131,37 +97,47 @@ export default function HomePage() {
               </Link>
             </nav>
 
-            {/* ✅ Auth state (Account vs Log in / Sign up) */}
             <AuthNav className="ml-1" />
           </div>
         </div>
       </header>
 
-      {/* Content */}
-      <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
+      {/* Content (more whitespace, less “pahmakas”) */}
+      <div className="mx-auto max-w-5xl px-4 py-12 md:py-16">
         <section className="mx-auto max-w-xl text-center">
           {/* Hero */}
           <div className="rounded-[2rem] border border-white/10 bg-white/5 px-6 py-10 shadow-sm backdrop-blur md:px-8">
+            <p
+              className="text-[12px] text-white/60"
+              style={{
+                fontFamily: "var(--font-subheading)",
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+              }}
+            >
+              Gentle emotional support
+            </p>
+
             <h1
-              className="text-5xl font-semibold md:text-6xl"
+              className="mt-3 text-4xl font-semibold md:text-5xl"
               style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
             >
-              A CALM SPACE
-              <span className="block">WHEN YOU NEED IT MOST</span>
+              Feel a little lighter
+              <span className="block">— one message at a time</span>
             </h1>
 
             <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/85">
-              Ventfreely is a calm, anonymous place to let your thoughts out. No judgement. No pressure.
-              Just a gentle AI companion listening.
+              Ventfreely helps when you feel low, empty, or mentally tired. No therapy. No diagnosis.
+              Just a calm, simple way to talk things through.
             </p>
 
             {/* Primary actions */}
-            <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
               <Link
                 href="/chat"
                 className={[
                   "inline-flex w-full items-center justify-center rounded-full px-6 py-4",
-                  "bg-white text-[#0B1634] transition",
+                  "bg-white text-[var(--vf-ink)] transition",
                   "hover:brightness-95 active:scale-[0.99]",
                   "sm:w-auto",
                 ].join(" ")}
@@ -193,7 +169,7 @@ export default function HomePage() {
             </div>
 
             {/* Trust badges */}
-            <div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2 text-[11px] text-white/70">
+            <div className="mx-auto mt-7 flex max-w-xl flex-wrap justify-center gap-2 text-[11px] text-white/70">
               <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1">
                 <span>🕊</span> gentle tone
               </span>
@@ -205,14 +181,14 @@ export default function HomePage() {
               </span>
             </div>
 
-            <p className="mx-auto mt-4 max-w-lg text-[11px] leading-relaxed text-white/55">
-              Ventfreely is not a therapist and doesn’t provide diagnoses. If you’re in immediate danger,
-              contact local emergency services.
+            <p className="mx-auto mt-5 max-w-lg text-[11px] leading-relaxed text-white/55">
+              Ventfreely isn’t a therapist and doesn’t provide medical advice or diagnoses. If you’re in
+              immediate danger, contact local emergency services.
             </p>
           </div>
 
-          {/* Action hub (fast mission path) */}
-          <div className="mt-6 grid gap-3 text-left md:grid-cols-2">
+          {/* Action hub */}
+          <div className="mt-8 grid gap-3 text-left md:grid-cols-2">
             <QuickCard
               eyebrow="FAST CHECK-IN"
               title="Daily Reflection"
@@ -234,14 +210,11 @@ export default function HomePage() {
             />
           </div>
 
-          {/* ✅ Daily Status (your real data + gating) */}
           <DailyStatusCard />
-
-          {/* ✅ NEW: Insights preview (This week vs Last week) */}
           <InsightsPreviewCard />
 
-          {/* How it works (short + mission aligned) */}
-          <div className="mt-10 text-left">
+          {/* How it works (short, calm, very readable) */}
+          <div className="mt-12 text-left">
             <h2
               className="text-sm text-white/80"
               style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
@@ -250,19 +223,13 @@ export default function HomePage() {
             </h2>
 
             <div className="mt-3 grid gap-3 text-[12px] text-white/80 md:grid-cols-3">
-              <StepCard title="1 · Quick check-in">
-                Take the test or do a daily reflection to name what’s going on.
-              </StepCard>
-              <StepCard title="2 · Vent safely">
-                Say what you’ve been holding. The AI responds gently.
-              </StepCard>
-              <StepCard title="3 · Keep momentum">
-                If it helps, unlock more time and tracking with Premium.
-              </StepCard>
+              <StepCard title="1 · Start small">Take the test or do a 1-minute daily check-in.</StepCard>
+              <StepCard title="2 · Talk it out">Say what’s been sitting in your mind — gently.</StepCard>
+              <StepCard title="3 · Stay consistent">Premium unlocks more time + tracking.</StepCard>
             </div>
 
-            {/* Premium CTA (simple + direct) */}
-            <div className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5">
+            {/* Premium CTA */}
+            <div className="mt-7 rounded-3xl border border-white/15 bg-white/5 p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p
@@ -279,7 +246,7 @@ export default function HomePage() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Link
                     href={CHECKOUT_URL}
-                    className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99]"
+                    className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99]"
                     style={{
                       fontFamily: "var(--font-subheading)",
                       letterSpacing: "0.06em",
@@ -295,8 +262,8 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Example (kept, but pushed lower) */}
-            <div className="mt-10">
+            {/* Example (pushed lower, less prominent) */}
+            <div className="mt-12">
               <div className="flex items-center justify-between text-[11px] text-white/60">
                 <span className="inline-flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
@@ -313,8 +280,9 @@ export default function HomePage() {
                 </div>
 
                 <div className="flex justify-end">
-                  <div className="max-w-[80%] rounded-2xl rounded-br-[1.6rem] bg-white px-3 py-2 text-[#0B1634]">
-                    That makes sense. You don’t have to tidy your thoughts here — you can just let them out as they are.
+                  <div className="max-w-[80%] rounded-2xl rounded-br-[1.6rem] bg-white px-3 py-2 text-[var(--vf-ink)]">
+                    That makes sense. You don’t have to tidy your thoughts here — you can just let them out
+                    as they are.
                   </div>
                 </div>
 
@@ -327,10 +295,10 @@ export default function HomePage() {
             </div>
 
             {/* Tiny footer */}
-            <div className="mt-10 text-center">
+            <div className="mt-12 text-center">
               <div className="mx-auto h-px w-full max-w-xl bg-white/10" />
               <p className="mt-4 text-[11px] text-white/45">
-                Made for calm moments. No judgement. No pressure.
+                Made for quiet moments. No judgement. No pressure.
               </p>
               <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px] text-white/55">
                 <Link href="/chat" className="hover:text-white/75">
@@ -385,7 +353,7 @@ function QuickCard({
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Link
           href={primaryHref}
-          className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99]"
+          className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99]"
           style={{
             fontFamily: "var(--font-subheading)",
             letterSpacing: "0.06em",
@@ -488,7 +456,7 @@ function DailyStatusCard() {
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Link
             href="/login"
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
             style={{
               fontFamily: "var(--font-subheading)",
               letterSpacing: "0.06em",
@@ -527,7 +495,7 @@ function DailyStatusCard() {
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Link
             href={CHECKOUT_URL}
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
             style={{
               fontFamily: "var(--font-subheading)",
               letterSpacing: "0.06em",
@@ -567,7 +535,7 @@ function DailyStatusCard() {
         <div className="mt-5">
           <Link
             href="/daily"
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
             style={{
               fontFamily: "var(--font-subheading)",
               letterSpacing: "0.06em",
@@ -591,9 +559,7 @@ function DailyStatusCard() {
           >
             YOUR WEEK (DAILY)
           </p>
-          <p className="mt-2 text-[14px] text-white/85">
-            {todayDone ? "Done today ✅" : "Not done today"}
-          </p>
+          <p className="mt-2 text-[14px] text-white/85">{todayDone ? "Done today ✅" : "Not done today"}</p>
         </div>
 
         <div className="text-right">
@@ -628,7 +594,7 @@ function DailyStatusCard() {
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Link
           href="/daily"
-          className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+          className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
           style={{
             fontFamily: "var(--font-subheading)",
             letterSpacing: "0.06em",
@@ -709,7 +675,7 @@ function InsightsPreviewCard() {
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Link
             href="/login"
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
             style={{
               fontFamily: "var(--font-subheading)",
               letterSpacing: "0.06em",
@@ -748,7 +714,7 @@ function InsightsPreviewCard() {
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Link
             href={CHECKOUT_URL}
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
             style={{
               fontFamily: "var(--font-subheading)",
               letterSpacing: "0.06em",
@@ -787,7 +753,7 @@ function InsightsPreviewCard() {
         <div className="mt-5">
           <Link
             href="/insights"
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
             style={{
               fontFamily: "var(--font-subheading)",
               letterSpacing: "0.06em",
@@ -831,7 +797,7 @@ function InsightsPreviewCard() {
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Link
           href="/insights"
-          className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+          className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
           style={{
             fontFamily: "var(--font-subheading)",
             letterSpacing: "0.06em",
