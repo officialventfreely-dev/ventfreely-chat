@@ -56,18 +56,34 @@ function trendText(t: "up" | "flat" | "down" | "na") {
   return "no data";
 }
 
-/* ✨ Small helper for purple glow cards */
+/* 💜 Purple glow + LED outline wrapper for every card */
 function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`relative ${className}`}>
+      {/* Soft purple glow */}
       <div
-        className="pointer-events-none absolute -inset-[1px] rounded-[2rem] blur-md"
+        className="pointer-events-none absolute -inset-[2px] rounded-[2rem] blur-md"
         style={{
           background:
-            "linear-gradient(120deg, rgba(192,132,252,0.55), rgba(168,85,247,0.35), rgba(99,102,241,0.35))",
-          opacity: 0.75,
+            "linear-gradient(120deg, rgba(192,132,252,0.55), rgba(168,85,247,0.45), rgba(129,140,248,0.45))",
+          opacity: 0.85,
         }}
       />
+
+      {/* LED-like outline (bright) */}
+      <div
+        className="pointer-events-none absolute -inset-[1px] rounded-[2rem]"
+        style={{
+          background:
+            "linear-gradient(120deg, rgba(233,213,255,0.95), rgba(216,180,254,0.78), rgba(199,210,254,0.72))",
+          mask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+          WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+          padding: "1px",
+          boxShadow:
+            "0 0 0 1px rgba(233,213,255,0.18), 0 0 26px rgba(192,132,252,0.16), 0 0 46px rgba(168,85,247,0.10)",
+        }}
+      />
+
       <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
         {children}
       </div>
@@ -77,6 +93,7 @@ function GlowCard({ children, className = "" }: { children: React.ReactNode; cla
 
 export default function HomePage() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   return (
     <main className="min-h-screen w-full">
@@ -85,10 +102,10 @@ export default function HomePage() {
         <div className="absolute inset-0" style={{ background: "var(--vf-bg)" }} />
       </div>
 
-      {/* Header */}
+      {/* Header: hamburger left, logo center (smaller), account icon right */}
       <header className="w-full bg-[var(--vf-header)]">
         <div className="relative mx-auto flex max-w-5xl items-center px-4 py-1.5">
-          {/* Left: Menu */}
+          {/* Left: navigation (hamburger) */}
           <button
             aria-label="Open menu"
             onClick={() => setMenuOpen(true)}
@@ -97,28 +114,34 @@ export default function HomePage() {
             <span className="text-xl">☰</span>
           </button>
 
-          {/* Center: Logo */}
+          {/* Center: Logo (smaller + clean spacing) */}
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2">
             <Link href="/" className="pointer-events-auto flex items-center">
               <Image
                 src="/brand/logo.svg"
                 alt="Ventfreely"
-                width={90}
-                height={24}
+                width={76}
+                height={20}
                 priority
                 className="opacity-95"
               />
             </Link>
           </div>
 
-          {/* Right: Account */}
+          {/* Right: account icon */}
           <div className="ml-auto">
-            <AuthNav />
+            <button
+              aria-label="Account"
+              onClick={() => setAccountOpen(true)}
+              className="inline-flex items-center justify-center rounded-full p-2 text-white/80 hover:bg-white/10"
+            >
+              <span className="text-lg">👤</span>
+            </button>
           </div>
         </div>
       </header>
 
-      {/* Slide-in Menu */}
+      {/* Slide-in Menu (LEFT) */}
       <div
         className={[
           "fixed inset-0 z-50 transition",
@@ -137,12 +160,12 @@ export default function HomePage() {
         {/* Panel */}
         <div
           className={[
-            "absolute left-0 top-0 h-full w-[280px] bg-[#0B1634] shadow-xl transition-transform duration-300",
+            "absolute left-0 top-0 h-full w-[288px] bg-[#0B1634] shadow-xl transition-transform duration-300",
             menuOpen ? "translate-x-0" : "-translate-x-full",
           ].join(" ")}
         >
           <div className="flex items-center justify-between px-4 py-3">
-            <Image src="/brand/logo.svg" alt="Ventfreely" width={84} height={22} />
+            <Image src="/brand/logo.svg" alt="Ventfreely" width={74} height={20} />
             <button
               aria-label="Close menu"
               onClick={() => setMenuOpen(false)}
@@ -171,17 +194,57 @@ export default function HomePage() {
               </Link>
             ))}
           </nav>
+        </div>
+      </div>
 
-          <div className="mt-6 border-t border-white/10 px-3 pt-4">
+      {/* Slide-in Account (RIGHT) */}
+      <div
+        className={[
+          "fixed inset-0 z-50 transition",
+          accountOpen ? "pointer-events-auto" : "pointer-events-none",
+        ].join(" ")}
+      >
+        {/* Backdrop */}
+        <div
+          onClick={() => setAccountOpen(false)}
+          className={[
+            "absolute inset-0 bg-black/40 transition-opacity",
+            accountOpen ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+        />
+
+        {/* Panel */}
+        <div
+          className={[
+            "absolute right-0 top-0 h-full w-[288px] bg-[#0B1634] shadow-xl transition-transform duration-300",
+            accountOpen ? "translate-x-0" : "translate-x-full",
+          ].join(" ")}
+        >
+          <div className="flex items-center justify-between px-4 py-3">
             <p
-              className="text-[12px] text-white/50"
+              className="text-[12px] text-white/70"
               style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
             >
               ACCOUNT
             </p>
-            <div className="mt-2">
-              <AuthNav />
-            </div>
+            <button
+              aria-label="Close account"
+              onClick={() => setAccountOpen(false)}
+              className="rounded-full p-2 text-white/70 hover:bg-white/10"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="px-4 pt-4">
+            {/* AuthNav shows the correct state: login/signup or account/logout */}
+            <AuthNav />
+          </div>
+
+          <div className="mt-6 border-t border-white/10 px-4 pt-4">
+            <p className="text-[12px] text-white/55 leading-relaxed">
+              Keep it simple. Come back whenever you need to talk things through.
+            </p>
           </div>
         </div>
       </div>
@@ -300,10 +363,12 @@ export default function HomePage() {
             </GlowCard>
           </div>
 
+          {/* ✅ Daily Status */}
           <GlowCard className="mt-10">
             <DailyStatusCard />
           </GlowCard>
 
+          {/* ✅ Insights preview */}
           <GlowCard className="mt-8">
             <InsightsPreviewCard />
           </GlowCard>
@@ -319,19 +384,13 @@ export default function HomePage() {
 
             <div className="mt-4 grid gap-4 text-[12px] text-white/80 md:grid-cols-3">
               <GlowCard>
-                <StepCard title="1 · Start small">
-                  Take the test or do a 1-minute daily check-in.
-                </StepCard>
+                <StepCard title="1 · Start small">Take the test or do a 1-minute daily check-in.</StepCard>
               </GlowCard>
               <GlowCard>
-                <StepCard title="2 · Talk it out">
-                  Say what’s been sitting in your mind — gently.
-                </StepCard>
+                <StepCard title="2 · Talk it out">Say what’s been sitting in your mind — gently.</StepCard>
               </GlowCard>
               <GlowCard>
-                <StepCard title="3 · Stay consistent">
-                  Premium unlocks more time + tracking.
-                </StepCard>
+                <StepCard title="3 · Stay consistent">Premium unlocks more time + tracking.</StepCard>
               </GlowCard>
             </div>
 
@@ -371,7 +430,7 @@ export default function HomePage() {
               </div>
             </GlowCard>
 
-            {/* Example */}
+            {/* Example (kept) */}
             <div className="mt-14">
               <div className="flex items-center justify-between text-[11px] text-white/60">
                 <span className="inline-flex items-center gap-2">
@@ -389,15 +448,21 @@ export default function HomePage() {
                 </GlowCard>
 
                 <GlowCard>
-                  <div className="px-3 py-2 text-[var(--vf-ink)] bg-white rounded-[2rem]">
+                  <div className="rounded-[2rem] bg-white px-3 py-2 text-[var(--vf-ink)]">
                     That makes sense. You don’t have to tidy your thoughts here — you can just let them out
                     as they are.
+                  </div>
+                </GlowCard>
+
+                <GlowCard>
+                  <div className="px-3 py-2 text-white/90">
+                    You’re allowed to take up space with how you feel.
                   </div>
                 </GlowCard>
               </div>
             </div>
 
-            {/* Footer */}
+            {/* Tiny footer */}
             <div className="mt-14 text-center">
               <div className="mx-auto h-px w-full max-w-xl bg-white/10" />
               <p className="mt-4 text-[11px] text-white/45">
@@ -424,8 +489,6 @@ export default function HomePage() {
     </main>
   );
 }
-
-/* --- Existing components below, unchanged in logic --- */
 
 function QuickCard({
   eyebrow,
@@ -531,7 +594,21 @@ function DailyStatusCard() {
     return out;
   }, [data]);
 
-  if (gate !== "ok") {
+  if (gate === "loading") {
+    return (
+      <div className="p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          YOUR WEEK (DAILY)
+        </p>
+        <p className="mt-2 text-[13px] text-white/70">Loading…</p>
+      </div>
+    );
+  }
+
+  if (gate === "unauthorized") {
     return (
       <div className="p-5 text-left">
         <p
@@ -541,11 +618,101 @@ function DailyStatusCard() {
           YOUR WEEK (DAILY)
         </p>
         <p className="mt-2 text-[14px] text-white/85">
-          {gate === "loading" && "Loading…"}
-          {gate === "unauthorized" && "Log in to save your daily moments and track progress."}
-          {gate === "paywall" && "Daily tracking is part of Premium."}
-          {gate === "error" && "Couldn’t load your daily status. Try again soon."}
+          Log in to save your daily moments and track progress.
         </p>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href="/login"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Log in
+          </Link>
+          <Link
+            href="/signup"
+            className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Create account
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (gate === "paywall") {
+    return (
+      <div className="p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          YOUR WEEK (DAILY)
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">Daily tracking is part of Premium.</p>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href={CHECKOUT_URL}
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Unlock Premium
+          </Link>
+          <Link
+            href="/daily"
+            className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Open daily
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (gate === "error") {
+    return (
+      <div className="p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          YOUR WEEK (DAILY)
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">
+          Couldn’t load your daily status. Try again soon.
+        </p>
+        <div className="mt-5">
+          <Link
+            href="/daily"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Open daily
+          </Link>
+        </div>
       </div>
     );
   }
@@ -591,6 +758,29 @@ function DailyStatusCard() {
         <MiniStat label="Status" value={todayDone ? "Done" : "Start"} />
         <MiniStat label="Trend" value={trendText(trend)} />
       </div>
+
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Link
+          href="/daily"
+          className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+          style={{
+            fontFamily: "var(--font-subheading)",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+          }}
+        >
+          {todayDone ? "View daily" : "Start daily"}
+        </Link>
+
+        <div className="flex items-center gap-4">
+          <Link href="/insights" className="text-[12px] text-white/60 hover:text-white/80">
+            Insights →
+          </Link>
+          <Link href="/weekly" className="text-[12px] text-white/60 hover:text-white/80">
+            Weekly report →
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
@@ -625,7 +815,7 @@ function InsightsPreviewCard() {
     };
   }, []);
 
-  if (gate !== "ok") {
+  if (gate === "loading") {
     return (
       <div className="p-5 text-left">
         <p
@@ -634,12 +824,113 @@ function InsightsPreviewCard() {
         >
           INSIGHTS (WEEKLY)
         </p>
-        <p className="mt-2 text-[14px] text-white/85">
-          {gate === "loading" && "Loading…"}
-          {gate === "unauthorized" && "Log in to view your insights."}
-          {gate === "paywall" && "Insights are part of Premium."}
-          {gate === "error" && "Couldn’t load insights. Try again soon."}
+        <p className="mt-2 text-[13px] text-white/70">Loading…</p>
+      </div>
+    );
+  }
+
+  if (gate === "unauthorized") {
+    return (
+      <div className="p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          INSIGHTS (WEEKLY)
         </p>
+        <p className="mt-2 text-[14px] text-white/85">Log in to view your insights.</p>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href="/login"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Log in
+          </Link>
+          <Link
+            href="/signup"
+            className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Create account
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (gate === "paywall") {
+    return (
+      <div className="p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          INSIGHTS (WEEKLY)
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">Insights are part of Premium.</p>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href={CHECKOUT_URL}
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Unlock Premium
+          </Link>
+          <Link
+            href="/insights"
+            className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Open insights
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (gate === "error") {
+    return (
+      <div className="p-5 text-left">
+        <p
+          className="text-[12px] text-white/60"
+          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
+        >
+          INSIGHTS (WEEKLY)
+        </p>
+        <p className="mt-2 text-[14px] text-white/85">Couldn’t load insights. Try again soon.</p>
+
+        <div className="mt-5">
+          <Link
+            href="/insights"
+            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+            style={{
+              fontFamily: "var(--font-subheading)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Open insights
+          </Link>
+        </div>
       </div>
     );
   }
@@ -669,6 +960,24 @@ function InsightsPreviewCard() {
       <div className="mt-4 grid grid-cols-2 gap-3">
         <MiniStat label="This week" value={`${thisDays}/7`} />
         <MiniStat label="Last week" value={`${lastDays}/7`} />
+      </div>
+
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Link
+          href="/insights"
+          className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+          style={{
+            fontFamily: "var(--font-subheading)",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+          }}
+        >
+          Open insights
+        </Link>
+
+        <Link href="/weekly" className="text-[12px] text-white/60 hover:text-white/80">
+          Weekly report →
+        </Link>
       </div>
     </div>
   );
