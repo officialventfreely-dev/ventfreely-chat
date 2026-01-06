@@ -57,41 +57,39 @@ function trendText(t: "up" | "flat" | "down" | "na") {
 }
 
 /**
- * ✅ WHAT YOU ASKED FOR (LOCKED IN):
- * - Cards look like before: dark page + card fill stays "bg-white/5" with subtle dark purple gradient.
- * - Outline = a THIN LINE (1–2px) around the card.
- * - Outline is "glow lilla" (NOT pink) + very subtle glow.
- * - Header: hamburger left, logo centered, account icon right (white).
- * - Clicking hamburger => slide menu from LEFT.
- * - Clicking account icon => slide panel from RIGHT (contains AuthNav for correct logged-in state).
- * - Not wrapping the entire page into one giant card (content is sectioned; cards only where it makes sense).
+ * ✅ LOCKED-IN STYLE:
+ * - Single outline color for ALL cards (like your reference): light lilac/blue, not pink.
+ * - Thin outline (1–2px) + small glow (subtle).
+ * - Card fill stays like before: bg-white/5 + gentle dark purple gradient inside.
  */
+const OUTLINE_RGBA = "199,210,254"; // #C7D2FE-ish (lilac/blue)
+const OUTLINE_LINE = `rgba(${OUTLINE_RGBA},0.62)`; // the thin "kriips"
+const OUTLINE_GLOW = `rgba(${OUTLINE_RGBA},0.18)`; // subtle glow
+const OUTLINE_GLOW_SOFT = `rgba(${OUTLINE_RGBA},0.10)`;
+
 function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`relative ${className}`}>
-      {/* Soft purple edge glow (subtle, not pink) */}
+      {/* Soft outer glow (very subtle, not “pink aura”) */}
       <div
-        className="pointer-events-none absolute -inset-[6px] rounded-[2rem] blur-xl"
+        className="pointer-events-none absolute -inset-[8px] rounded-[2rem] blur-2xl"
         style={{
-          background:
-            "radial-gradient(closest-side, rgba(168,85,247,0.18), transparent 62%), radial-gradient(closest-side, rgba(129,140,248,0.10), transparent 70%)",
+          background: `radial-gradient(closest-side, ${OUTLINE_GLOW_SOFT}, transparent 62%)`,
           opacity: 1,
         }}
       />
 
-      {/* THIN OUTLINE (the actual “kriips ümber kasti”) */}
+      {/* Thin outline (the real outline) + small glow */}
       <div
         className="pointer-events-none absolute inset-0 rounded-[2rem]"
         style={{
-          // 1.5px line via inset shadow so it stays crisp on rounded corners
-          boxShadow:
-            "inset 0 0 0 1.5px rgba(199,210,254,0.55), 0 0 14px rgba(168,85,247,0.14)",
+          boxShadow: `inset 0 0 0 1.25px ${OUTLINE_LINE}, 0 0 14px ${OUTLINE_GLOW}`,
         }}
       />
 
-      {/* Card body: keep like before */}
+      {/* Card body */}
       <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
-        {/* Subtle dark purple gradient inside the card (the “tumedam lilla gradient vibe”) */}
+        {/* Subtle dark purple gradient overlay INSIDE the card (keeps the old vibe) */}
         <div
           className="pointer-events-none absolute inset-0 rounded-[2rem]"
           style={{
@@ -107,14 +105,7 @@ function GlowCard({ children, className = "" }: { children: React.ReactNode; cla
 
 function UserIcon({ className = "" }: { className?: string }) {
   return (
-    <svg
-      className={className}
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         d="M20 21a8 8 0 0 0-16 0"
         stroke="currentColor"
@@ -155,21 +146,21 @@ export default function HomePage() {
             <span className="text-xl">☰</span>
           </button>
 
-          {/* Center: Logo (slightly smaller, “perfect fit”) */}
+          {/* Center: Logo (a touch smaller) */}
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2">
             <Link href="/" className="pointer-events-auto flex items-center">
               <Image
                 src="/brand/logo.svg"
                 alt="Ventfreely"
-                width={82}
-                height={22}
+                width={78}
+                height={20}
                 priority
                 className="opacity-95"
               />
             </Link>
           </div>
 
-          {/* Right: Account ICON (WHITE) */}
+          {/* Right: Account ICON (white) */}
           <div className="ml-auto">
             <button
               aria-label="Account"
@@ -210,7 +201,7 @@ export default function HomePage() {
           }}
         >
           <div className="flex items-center justify-between px-4 py-3">
-            <Image src="/brand/logo.svg" alt="Ventfreely" width={78} height={20} />
+            <Image src="/brand/logo.svg" alt="Ventfreely" width={76} height={20} />
             <button
               aria-label="Close menu"
               onClick={() => setMenuOpen(false)}
@@ -285,8 +276,8 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* Auth menu content (shows correct state automatically) */}
           <div className="px-4 pt-4">
+            {/* Shows correct state automatically */}
             <AuthNav />
           </div>
 
@@ -365,7 +356,7 @@ export default function HomePage() {
                 </Link>
               </div>
 
-              {/* Trust badges */}
+              {/* Trust badges (already icon-based, simple) */}
               <div className="mx-auto mt-7 flex max-w-xl flex-wrap justify-center gap-2 text-[11px] text-white/70">
                 <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1">
                   <span>🕊</span> gentle tone
@@ -385,10 +376,11 @@ export default function HomePage() {
             </div>
           </GlowCard>
 
-          {/* Action hub (not wrapping everything into one mega-card; just the meaningful boxes) */}
+          {/* Action hub */}
           <div className="mt-10 grid gap-4 text-left md:grid-cols-2">
             <GlowCard>
               <QuickCard
+                icon="📝"
                 eyebrow="FAST CHECK-IN"
                 title="Daily Reflection"
                 desc="One good moment. One emotion. One energy. Done."
@@ -401,6 +393,7 @@ export default function HomePage() {
 
             <GlowCard>
               <QuickCard
+                icon="✨"
                 eyebrow="SOFT INSIGHTS"
                 title="Weekly Insights"
                 desc="A gentle snapshot of your last 7 days — simple and calm."
@@ -422,7 +415,7 @@ export default function HomePage() {
             <InsightsPreviewCard />
           </GlowCard>
 
-          {/* How it works (section is plain; only small step cards are boxed) */}
+          {/* How it works */}
           <div className="mt-14 text-left">
             <h2
               className="text-sm text-white/80"
@@ -433,13 +426,19 @@ export default function HomePage() {
 
             <div className="mt-4 grid gap-4 text-[12px] text-white/80 md:grid-cols-3">
               <GlowCard>
-                <StepCard title="1 · Start small">Take the test or do a 1-minute daily check-in.</StepCard>
+                <StepCard title="1 · Start small" icon="🌿">
+                  Take the test or do a 1-minute daily check-in.
+                </StepCard>
               </GlowCard>
               <GlowCard>
-                <StepCard title="2 · Talk it out">Say what’s been sitting in your mind — gently.</StepCard>
+                <StepCard title="2 · Talk it out" icon="💬">
+                  Say what’s been sitting in your mind — gently.
+                </StepCard>
               </GlowCard>
               <GlowCard>
-                <StepCard title="3 · Stay consistent">Premium unlocks more time + tracking.</StepCard>
+                <StepCard title="3 · Stay consistent" icon="📈">
+                  Premium unlocks more time + tracking.
+                </StepCard>
               </GlowCard>
             </div>
 
@@ -479,7 +478,7 @@ export default function HomePage() {
               </div>
             </GlowCard>
 
-            {/* Example (kept, and not “pinkified”) */}
+            {/* Example */}
             <div className="mt-14">
               <div className="flex items-center justify-between text-[11px] text-white/60">
                 <span className="inline-flex items-center gap-2">
@@ -547,6 +546,7 @@ function QuickCard({
   primaryLabel,
   secondaryHref,
   secondaryLabel,
+  icon,
 }: {
   eyebrow: string;
   title: string;
@@ -555,6 +555,7 @@ function QuickCard({
   primaryLabel: string;
   secondaryHref: string;
   secondaryLabel: string;
+  icon?: string;
 }) {
   return (
     <div className="p-5">
@@ -564,7 +565,12 @@ function QuickCard({
       >
         {eyebrow}
       </p>
-      <p className="mt-2 text-[16px] font-semibold text-white/90">{title}</p>
+
+      <p className="mt-2 flex items-center gap-2 text-[16px] font-semibold text-white/90">
+        {icon ? <span className="text-[16px]" aria-hidden="true">{icon}</span> : null}
+        <span>{title}</span>
+      </p>
+
       <p className="mt-1 text-[12px] leading-relaxed text-white/70">{desc}</p>
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -650,7 +656,7 @@ function DailyStatusCard() {
           className="text-[12px] text-white/60"
           style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
         >
-          YOUR WEEK (DAILY)
+          📅 YOUR WEEK (DAILY)
         </p>
         <p className="mt-2 text-[13px] text-white/70">Loading…</p>
       </div>
@@ -664,7 +670,7 @@ function DailyStatusCard() {
           className="text-[12px] text-white/60"
           style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
         >
-          YOUR WEEK (DAILY)
+          📅 YOUR WEEK (DAILY)
         </p>
         <p className="mt-2 text-[14px] text-white/85">
           Log in to save your daily moments and track progress.
@@ -705,7 +711,7 @@ function DailyStatusCard() {
           className="text-[12px] text-white/60"
           style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
         >
-          YOUR WEEK (DAILY)
+          📅 YOUR WEEK (DAILY)
         </p>
         <p className="mt-2 text-[14px] text-white/85">Daily tracking is part of Premium.</p>
 
@@ -744,7 +750,7 @@ function DailyStatusCard() {
           className="text-[12px] text-white/60"
           style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
         >
-          YOUR WEEK (DAILY)
+          📅 YOUR WEEK (DAILY)
         </p>
         <p className="mt-2 text-[14px] text-white/85">
           Couldn’t load your daily status. Try again soon.
@@ -774,9 +780,11 @@ function DailyStatusCard() {
             className="text-[12px] text-white/60"
             style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
           >
-            YOUR WEEK (DAILY)
+            📅 YOUR WEEK (DAILY)
           </p>
-          <p className="mt-2 text-[14px] text-white/85">{data ? "Loaded ✅" : "—"}</p>
+          <p className="mt-2 text-[14px] text-white/85">
+            {todayDone ? "Done today ✅" : "Not done today"}
+          </p>
         </div>
 
         <div className="text-right">
@@ -804,7 +812,7 @@ function DailyStatusCard() {
 
       <div className="mt-5 grid grid-cols-3 gap-3">
         <MiniStat label="This week" value={`${completedDays}/7`} />
-        <MiniStat label="Status" value={seriesDates.has(data?.range?.end ?? "") ? "Done" : "Start"} />
+        <MiniStat label="Status" value={todayDone ? "Done" : "Start"} />
         <MiniStat label="Trend" value={trendText(trend)} />
       </div>
 
@@ -818,7 +826,7 @@ function DailyStatusCard() {
             textTransform: "uppercase",
           }}
         >
-          Open daily
+          {todayDone ? "View daily" : "Start daily"}
         </Link>
 
         <div className="flex items-center gap-4">
@@ -871,7 +879,7 @@ function InsightsPreviewCard() {
           className="text-[12px] text-white/60"
           style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
         >
-          INSIGHTS (WEEKLY)
+          📊 INSIGHTS (WEEKLY)
         </p>
         <p className="mt-2 text-[13px] text-white/70">Loading…</p>
       </div>
@@ -885,7 +893,7 @@ function InsightsPreviewCard() {
           className="text-[12px] text-white/60"
           style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
         >
-          INSIGHTS (WEEKLY)
+          📊 INSIGHTS (WEEKLY)
         </p>
         <p className="mt-2 text-[14px] text-white/85">Log in to view your insights.</p>
 
@@ -924,7 +932,7 @@ function InsightsPreviewCard() {
           className="text-[12px] text-white/60"
           style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
         >
-          INSIGHTS (WEEKLY)
+          📊 INSIGHTS (WEEKLY)
         </p>
         <p className="mt-2 text-[14px] text-white/85">Insights are part of Premium.</p>
 
@@ -963,7 +971,7 @@ function InsightsPreviewCard() {
           className="text-[12px] text-white/60"
           style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
         >
-          INSIGHTS (WEEKLY)
+          📊 INSIGHTS (WEEKLY)
         </p>
         <p className="mt-2 text-[14px] text-white/85">Couldn’t load insights. Try again soon.</p>
 
@@ -996,7 +1004,7 @@ function InsightsPreviewCard() {
             className="text-[12px] text-white/60"
             style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
           >
-            INSIGHTS (WEEKLY)
+            📊 INSIGHTS (WEEKLY)
           </p>
           <p className="mt-2 text-[14px] text-white/85">{note}</p>
         </div>
@@ -1041,14 +1049,23 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StepCard({ title, children }: { title: string; children: React.ReactNode }) {
+function StepCard({
+  title,
+  children,
+  icon,
+}: {
+  title: string;
+  children: React.ReactNode;
+  icon?: string;
+}) {
   return (
     <div className="p-4">
       <p
-        className="text-[11px] font-semibold text-white/85"
+        className="flex items-center gap-2 text-[11px] font-semibold text-white/85"
         style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
       >
-        {title}
+        {icon ? <span aria-hidden="true">{icon}</span> : null}
+        <span>{title}</span>
       </p>
       <p className="mt-1 text-[12px] leading-relaxed text-white/70">{children}</p>
     </div>
