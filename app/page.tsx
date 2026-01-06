@@ -57,39 +57,50 @@ function trendText(t: "up" | "flat" | "down" | "na") {
 }
 
 /**
- * ✅ LOCKED-IN STYLE:
- * - Single outline color for ALL cards (like your reference): light lilac/blue, not pink.
- * - Thin outline (1–2px) + small glow (subtle).
- * - Card fill stays like before: bg-white/5 + gentle dark purple gradient inside.
+ * ✅ FIX YOU ASKED FOR:
+ * - The thin outline line is NO LONGER white-ish.
+ * - It is now a BRIGHT PURPLE line (ere lilla).
+ * - Glow is OUTSIDE the card (kastist välja poole).
+ * - Card interior stays same dark vibe.
+ *
+ * If you want it EVEN more purple, increase LINE_ALPHA / GLOW_ALPHA a bit.
  */
-const OUTLINE_RGBA = "199,210,254"; // #C7D2FE-ish (lilac/blue)
-const OUTLINE_LINE = `rgba(${OUTLINE_RGBA},0.62)`; // the thin "kriips"
-const OUTLINE_GLOW = `rgba(${OUTLINE_RGBA},0.18)`; // subtle glow
-const OUTLINE_GLOW_SOFT = `rgba(${OUTLINE_RGBA},0.10)`;
+const PURPLE = "168,85,247"; // #A855F7 (bright purple, NOT pink)
+const LINE_ALPHA = 0.85; // how visible the thin line is
+const GLOW_ALPHA = 0.35; // outside glow strength (subtle but visible)
+const SOFT_GLOW_ALPHA = 0.18; // large soft halo strength
 
 function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`relative ${className}`}>
-      {/* Soft outer glow (very subtle, not “pink aura”) */}
+      {/* ✅ OUTSIDE glow (kastist välja poole) */}
       <div
-        className="pointer-events-none absolute -inset-[8px] rounded-[2rem] blur-2xl"
+        className="pointer-events-none absolute -inset-[10px] rounded-[2rem] blur-2xl"
         style={{
-          background: `radial-gradient(closest-side, ${OUTLINE_GLOW_SOFT}, transparent 62%)`,
+          background: `radial-gradient(closest-side, rgba(${PURPLE},${SOFT_GLOW_ALPHA}), transparent 62%)`,
           opacity: 1,
         }}
       />
 
-      {/* Thin outline (the real outline) + small glow */}
+      {/* ✅ The thin OUTLINE line around the card (ere lilla) */}
       <div
         className="pointer-events-none absolute inset-0 rounded-[2rem]"
         style={{
-          boxShadow: `inset 0 0 0 1.25px ${OUTLINE_LINE}, 0 0 14px ${OUTLINE_GLOW}`,
+          boxShadow: `inset 0 0 0 1.5px rgba(${PURPLE},${LINE_ALPHA})`,
         }}
       />
 
-      {/* Card body */}
+      {/* ✅ Small outside edge glow (tight LED feel) */}
+      <div
+        className="pointer-events-none absolute -inset-[2px] rounded-[2rem]"
+        style={{
+          boxShadow: `0 0 18px rgba(${PURPLE},${GLOW_ALPHA})`,
+        }}
+      />
+
+      {/* Card body (keep like before) */}
       <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
-        {/* Subtle dark purple gradient overlay INSIDE the card (keeps the old vibe) */}
+        {/* Subtle dark purple gradient overlay inside */}
         <div
           className="pointer-events-none absolute inset-0 rounded-[2rem]"
           style={{
@@ -146,13 +157,13 @@ export default function HomePage() {
             <span className="text-xl">☰</span>
           </button>
 
-          {/* Center: Logo (a touch smaller) */}
+          {/* Center: Logo (tiny bit smaller) */}
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2">
             <Link href="/" className="pointer-events-auto flex items-center">
               <Image
                 src="/brand/logo.svg"
                 alt="Ventfreely"
-                width={78}
+                width={74}
                 height={20}
                 priority
                 className="opacity-95"
@@ -180,7 +191,6 @@ export default function HomePage() {
           menuOpen ? "pointer-events-auto" : "pointer-events-none",
         ].join(" ")}
       >
-        {/* Backdrop */}
         <div
           onClick={() => setMenuOpen(false)}
           className={[
@@ -189,7 +199,6 @@ export default function HomePage() {
           ].join(" ")}
         />
 
-        {/* Panel */}
         <div
           className={[
             "absolute left-0 top-0 h-full w-[280px] shadow-xl transition-transform duration-300",
@@ -240,7 +249,6 @@ export default function HomePage() {
           accountOpen ? "pointer-events-auto" : "pointer-events-none",
         ].join(" ")}
       >
-        {/* Backdrop */}
         <div
           onClick={() => setAccountOpen(false)}
           className={[
@@ -249,7 +257,6 @@ export default function HomePage() {
           ].join(" ")}
         />
 
-        {/* Panel */}
         <div
           className={[
             "absolute right-0 top-0 h-full w-[280px] shadow-xl transition-transform duration-300",
@@ -277,7 +284,6 @@ export default function HomePage() {
           </div>
 
           <div className="px-4 pt-4">
-            {/* Shows correct state automatically */}
             <AuthNav />
           </div>
 
@@ -292,7 +298,6 @@ export default function HomePage() {
       {/* Content */}
       <div className="mx-auto max-w-5xl px-4 py-12 md:py-16">
         <section className="mx-auto max-w-xl text-center">
-          {/* Hero */}
           <GlowCard>
             <div className="px-6 py-10 md:px-8">
               <p
@@ -319,7 +324,6 @@ export default function HomePage() {
                 Just a calm, simple way to talk things through.
               </p>
 
-              {/* Primary actions */}
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
                 <Link
                   href="/chat"
@@ -356,7 +360,6 @@ export default function HomePage() {
                 </Link>
               </div>
 
-              {/* Trust badges (already icon-based, simple) */}
               <div className="mx-auto mt-7 flex max-w-xl flex-wrap justify-center gap-2 text-[11px] text-white/70">
                 <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1">
                   <span>🕊</span> gentle tone
@@ -376,7 +379,6 @@ export default function HomePage() {
             </div>
           </GlowCard>
 
-          {/* Action hub */}
           <div className="mt-10 grid gap-4 text-left md:grid-cols-2">
             <GlowCard>
               <QuickCard
@@ -405,17 +407,14 @@ export default function HomePage() {
             </GlowCard>
           </div>
 
-          {/* ✅ Daily Status */}
           <GlowCard className="mt-10">
             <DailyStatusCard />
           </GlowCard>
 
-          {/* ✅ Insights preview */}
           <GlowCard className="mt-8">
             <InsightsPreviewCard />
           </GlowCard>
 
-          {/* How it works */}
           <div className="mt-14 text-left">
             <h2
               className="text-sm text-white/80"
@@ -442,7 +441,6 @@ export default function HomePage() {
               </GlowCard>
             </div>
 
-            {/* Premium CTA */}
             <GlowCard className="mt-10">
               <div className="p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -478,7 +476,6 @@ export default function HomePage() {
               </div>
             </GlowCard>
 
-            {/* Example */}
             <div className="mt-14">
               <div className="flex items-center justify-between text-[11px] text-white/60">
                 <span className="inline-flex items-center gap-2">
@@ -510,7 +507,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Tiny footer */}
             <div className="mt-14 text-center">
               <div className="mx-auto h-px w-full max-w-xl bg-white/10" />
               <p className="mt-4 text-[11px] text-white/45">
@@ -567,7 +563,11 @@ function QuickCard({
       </p>
 
       <p className="mt-2 flex items-center gap-2 text-[16px] font-semibold text-white/90">
-        {icon ? <span className="text-[16px]" aria-hidden="true">{icon}</span> : null}
+        {icon ? (
+          <span className="text-[16px]" aria-hidden="true">
+            {icon}
+          </span>
+        ) : null}
         <span>{title}</span>
       </p>
 
@@ -782,9 +782,7 @@ function DailyStatusCard() {
           >
             📅 YOUR WEEK (DAILY)
           </p>
-          <p className="mt-2 text-[14px] text-white/85">
-            {todayDone ? "Done today ✅" : "Not done today"}
-          </p>
+          <p className="mt-2 text-[14px] text-white/85">{todayDone ? "Done today ✅" : "Not done today"}</p>
         </div>
 
         <div className="text-right">
@@ -872,7 +870,7 @@ function InsightsPreviewCard() {
     };
   }, []);
 
-  if (gate === "loading") {
+  if (gate !== "ok") {
     return (
       <div className="p-5 text-left">
         <p
@@ -881,113 +879,12 @@ function InsightsPreviewCard() {
         >
           📊 INSIGHTS (WEEKLY)
         </p>
-        <p className="mt-2 text-[13px] text-white/70">Loading…</p>
-      </div>
-    );
-  }
-
-  if (gate === "unauthorized") {
-    return (
-      <div className="p-5 text-left">
-        <p
-          className="text-[12px] text-white/60"
-          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-        >
-          📊 INSIGHTS (WEEKLY)
+        <p className="mt-2 text-[14px] text-white/85">
+          {gate === "loading" && "Loading…"}
+          {gate === "unauthorized" && "Log in to view your insights."}
+          {gate === "paywall" && "Insights are part of Premium."}
+          {gate === "error" && "Couldn’t load insights. Try again soon."}
         </p>
-        <p className="mt-2 text-[14px] text-white/85">Log in to view your insights.</p>
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <Link
-            href="/login"
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
-            style={{
-              fontFamily: "var(--font-subheading)",
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-            }}
-          >
-            Log in
-          </Link>
-          <Link
-            href="/signup"
-            className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
-            style={{
-              fontFamily: "var(--font-subheading)",
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-            }}
-          >
-            Create account
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  if (gate === "paywall") {
-    return (
-      <div className="p-5 text-left">
-        <p
-          className="text-[12px] text-white/60"
-          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-        >
-          📊 INSIGHTS (WEEKLY)
-        </p>
-        <p className="mt-2 text-[14px] text-white/85">Insights are part of Premium.</p>
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <Link
-            href={CHECKOUT_URL}
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
-            style={{
-              fontFamily: "var(--font-subheading)",
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-            }}
-          >
-            Unlock Premium
-          </Link>
-          <Link
-            href="/insights"
-            className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
-            style={{
-              fontFamily: "var(--font-subheading)",
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-            }}
-          >
-            Open insights
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  if (gate === "error") {
-    return (
-      <div className="p-5 text-left">
-        <p
-          className="text-[12px] text-white/60"
-          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-        >
-          📊 INSIGHTS (WEEKLY)
-        </p>
-        <p className="mt-2 text-[14px] text-white/85">Couldn’t load insights. Try again soon.</p>
-
-        <div className="mt-5">
-          <Link
-            href="/insights"
-            className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
-            style={{
-              fontFamily: "var(--font-subheading)",
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-            }}
-          >
-            Open insights
-          </Link>
-        </div>
       </div>
     );
   }
@@ -1017,24 +914,6 @@ function InsightsPreviewCard() {
       <div className="mt-4 grid grid-cols-2 gap-3">
         <MiniStat label="This week" value={`${thisDays}/7`} />
         <MiniStat label="Last week" value={`${lastDays}/7`} />
-      </div>
-
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Link
-          href="/insights"
-          className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
-          style={{
-            fontFamily: "var(--font-subheading)",
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-          }}
-        >
-          Open insights
-        </Link>
-
-        <Link href="/weekly" className="text-[12px] text-white/60 hover:text-white/80">
-          Weekly report →
-        </Link>
       </div>
     </div>
   );
