@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AuthNav } from "@/app/components/AuthNav";
 
 const CHECKOUT_URL =
-  "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfX1lEc8TNBb/en-ee?_r=AQABKeCP8HYH1psvfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
+  "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
 
 type WeekData =
   | {
@@ -56,38 +56,74 @@ function trendText(t: "up" | "flat" | "down" | "na") {
   return "no data";
 }
 
-/* 💜 Purple glow + LED outline wrapper for every card */
+/* 💜 Purple glow + LED edge, but keep card fill like before (white/5) + subtle dark purple gradient */
 function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`relative ${className}`}>
-      {/* Soft purple glow */}
+      {/* Outer aura */}
       <div
-        className="pointer-events-none absolute -inset-[2px] rounded-[2rem] blur-md"
+        className="pointer-events-none absolute -inset-[3px] rounded-[2rem] blur-lg"
         style={{
           background:
-            "linear-gradient(120deg, rgba(192,132,252,0.55), rgba(168,85,247,0.45), rgba(129,140,248,0.45))",
-          opacity: 0.85,
+            "radial-gradient(closest-side, rgba(217,70,239,0.22), transparent 60%), linear-gradient(120deg, rgba(168,85,247,0.30), rgba(192,132,252,0.18), rgba(99,102,241,0.14))",
+          opacity: 1,
         }}
       />
 
-      {/* LED-like outline (bright) */}
+      {/* LED-like outline (more purple) */}
       <div
-        className="pointer-events-none absolute -inset-[1px] rounded-[2rem]"
+        className="pointer-events-none absolute -inset-[1.25px] rounded-[2rem]"
         style={{
           background:
-            "linear-gradient(120deg, rgba(233,213,255,0.95), rgba(216,180,254,0.78), rgba(199,210,254,0.72))",
+            "linear-gradient(120deg, rgba(233,213,255,0.95), rgba(192,132,252,0.92), rgba(168,85,247,0.88))",
           mask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
           WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
           padding: "1px",
           boxShadow:
-            "0 0 0 1px rgba(233,213,255,0.18), 0 0 26px rgba(192,132,252,0.16), 0 0 46px rgba(168,85,247,0.10)",
+            "0 0 0 1px rgba(216,180,254,0.22), 0 0 30px rgba(168,85,247,0.22), 0 0 58px rgba(192,132,252,0.14)",
         }}
       />
 
+      {/* Card itself (back to “before” vibe) */}
       <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
-        {children}
+        {/* Subtle dark purple gradient overlay INSIDE the card (keeps the original look, just richer) */}
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[2rem]"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(88,28,135,0.22) 0%, rgba(59,130,246,0.00) 45%, rgba(147,51,234,0.16) 100%)",
+          }}
+        />
+        <div className="relative">{children}</div>
       </div>
     </div>
+  );
+}
+
+function UserIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M20 21a8 8 0 0 0-16 0"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12 13a5 5 0 1 0-5-5 5 5 0 0 0 5 5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -102,40 +138,40 @@ export default function HomePage() {
         <div className="absolute inset-0" style={{ background: "var(--vf-bg)" }} />
       </div>
 
-      {/* Header: hamburger left, logo center (smaller), account icon right */}
+      {/* Header */}
       <header className="w-full bg-[var(--vf-header)]">
         <div className="relative mx-auto flex max-w-5xl items-center px-4 py-1.5">
-          {/* Left: navigation (hamburger) */}
+          {/* Left: navigation menu */}
           <button
             aria-label="Open menu"
             onClick={() => setMenuOpen(true)}
-            className="inline-flex items-center justify-center rounded-full p-2 text-white/80 hover:bg-white/10"
+            className="inline-flex items-center justify-center rounded-full p-2 text-white hover:bg-white/10"
           >
             <span className="text-xl">☰</span>
           </button>
 
-          {/* Center: Logo (smaller + clean spacing) */}
+          {/* Center: Logo (slightly smaller than before) */}
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2">
             <Link href="/" className="pointer-events-auto flex items-center">
               <Image
                 src="/brand/logo.svg"
                 alt="Ventfreely"
-                width={76}
-                height={20}
+                width={70}
+                height={18}
                 priority
                 className="opacity-95"
               />
             </Link>
           </div>
 
-          {/* Right: account icon */}
+          {/* Right: Account icon (WHITE) */}
           <div className="ml-auto">
             <button
               aria-label="Account"
               onClick={() => setAccountOpen(true)}
-              className="inline-flex items-center justify-center rounded-full p-2 text-white/80 hover:bg-white/10"
+              className="inline-flex items-center justify-center rounded-full p-2 text-white hover:bg-white/10"
             >
-              <span className="text-lg">👤</span>
+              <UserIcon className="text-white" />
             </button>
           </div>
         </div>
@@ -148,7 +184,6 @@ export default function HomePage() {
           menuOpen ? "pointer-events-auto" : "pointer-events-none",
         ].join(" ")}
       >
-        {/* Backdrop */}
         <div
           onClick={() => setMenuOpen(false)}
           className={[
@@ -157,25 +192,28 @@ export default function HomePage() {
           ].join(" ")}
         />
 
-        {/* Panel */}
         <div
           className={[
-            "absolute left-0 top-0 h-full w-[288px] bg-[#0B1634] shadow-xl transition-transform duration-300",
+            "absolute left-0 top-0 h-full w-[288px] shadow-xl transition-transform duration-300",
             menuOpen ? "translate-x-0" : "-translate-x-full",
           ].join(" ")}
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(11,22,52,0.96) 0%, rgba(7,16,42,0.98) 60%, rgba(6,16,39,0.98) 100%)",
+          }}
         >
           <div className="flex items-center justify-between px-4 py-3">
-            <Image src="/brand/logo.svg" alt="Ventfreely" width={74} height={20} />
+            <Image src="/brand/logo.svg" alt="Ventfreely" width={70} height={18} />
             <button
               aria-label="Close menu"
               onClick={() => setMenuOpen(false)}
-              className="rounded-full p-2 text-white/70 hover:bg-white/10"
+              className="rounded-full p-2 text-white/80 hover:bg-white/10"
             >
               ✕
             </button>
           </div>
 
-          <nav className="mt-4 flex flex-col gap-1 px-3 text-[14px] text-white/85">
+          <nav className="mt-4 flex flex-col gap-1 px-3 text-[14px] text-white/90">
             {[
               ["Home", "/"],
               ["Test", "/test"],
@@ -204,7 +242,6 @@ export default function HomePage() {
           accountOpen ? "pointer-events-auto" : "pointer-events-none",
         ].join(" ")}
       >
-        {/* Backdrop */}
         <div
           onClick={() => setAccountOpen(false)}
           className={[
@@ -213,12 +250,15 @@ export default function HomePage() {
           ].join(" ")}
         />
 
-        {/* Panel */}
         <div
           className={[
-            "absolute right-0 top-0 h-full w-[288px] bg-[#0B1634] shadow-xl transition-transform duration-300",
+            "absolute right-0 top-0 h-full w-[288px] shadow-xl transition-transform duration-300",
             accountOpen ? "translate-x-0" : "translate-x-full",
           ].join(" ")}
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(11,22,52,0.96) 0%, rgba(7,16,42,0.98) 60%, rgba(6,16,39,0.98) 100%)",
+          }}
         >
           <div className="flex items-center justify-between px-4 py-3">
             <p
@@ -230,14 +270,14 @@ export default function HomePage() {
             <button
               aria-label="Close account"
               onClick={() => setAccountOpen(false)}
-              className="rounded-full p-2 text-white/70 hover:bg-white/10"
+              className="rounded-full p-2 text-white/80 hover:bg-white/10"
             >
               ✕
             </button>
           </div>
 
           <div className="px-4 pt-4">
-            {/* AuthNav shows the correct state: login/signup or account/logout */}
+            {/* AuthNav shows correct state (login/signup vs account/logout) */}
             <AuthNav />
           </div>
 
@@ -430,7 +470,7 @@ export default function HomePage() {
               </div>
             </GlowCard>
 
-            {/* Example (kept) */}
+            {/* Example */}
             <div className="mt-14">
               <div className="flex items-center justify-between text-[11px] text-white/60">
                 <span className="inline-flex items-center gap-2">
@@ -455,14 +495,12 @@ export default function HomePage() {
                 </GlowCard>
 
                 <GlowCard>
-                  <div className="px-3 py-2 text-white/90">
-                    You’re allowed to take up space with how you feel.
-                  </div>
+                  <div className="px-3 py-2 text-white/90">You’re allowed to take up space with how you feel.</div>
                 </GlowCard>
               </div>
             </div>
 
-            {/* Tiny footer */}
+            {/* Footer */}
             <div className="mt-14 text-center">
               <div className="mx-auto h-px w-full max-w-xl bg-white/10" />
               <p className="mt-4 text-[11px] text-white/45">
