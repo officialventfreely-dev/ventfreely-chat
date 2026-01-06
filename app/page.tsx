@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AuthNav } from "@/app/components/AuthNav";
 
 const CHECKOUT_URL =
-  "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
+  "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfX1lEc8TNBb/en-ee?_r=AQABKeCP8HYH1psvfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
 
 type WeekData =
   | {
@@ -56,42 +56,47 @@ function trendText(t: "up" | "flat" | "down" | "na") {
   return "no data";
 }
 
-/* 💜 Purple glow + LED edge, but keep card fill like before (white/5) + subtle dark purple gradient */
+/**
+ * ✅ WHAT YOU ASKED FOR (LOCKED IN):
+ * - Cards look like before: dark page + card fill stays "bg-white/5" with subtle dark purple gradient.
+ * - Outline = a THIN LINE (1–2px) around the card.
+ * - Outline is "glow lilla" (NOT pink) + very subtle glow.
+ * - Header: hamburger left, logo centered, account icon right (white).
+ * - Clicking hamburger => slide menu from LEFT.
+ * - Clicking account icon => slide panel from RIGHT (contains AuthNav for correct logged-in state).
+ * - Not wrapping the entire page into one giant card (content is sectioned; cards only where it makes sense).
+ */
 function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`relative ${className}`}>
-      {/* Outer aura */}
+      {/* Soft purple edge glow (subtle, not pink) */}
       <div
-        className="pointer-events-none absolute -inset-[3px] rounded-[2rem] blur-lg"
+        className="pointer-events-none absolute -inset-[6px] rounded-[2rem] blur-xl"
         style={{
           background:
-            "radial-gradient(closest-side, rgba(217,70,239,0.22), transparent 60%), linear-gradient(120deg, rgba(168,85,247,0.30), rgba(192,132,252,0.18), rgba(99,102,241,0.14))",
+            "radial-gradient(closest-side, rgba(168,85,247,0.18), transparent 62%), radial-gradient(closest-side, rgba(129,140,248,0.10), transparent 70%)",
           opacity: 1,
         }}
       />
 
-      {/* LED-like outline (more purple) */}
+      {/* THIN OUTLINE (the actual “kriips ümber kasti”) */}
       <div
-        className="pointer-events-none absolute -inset-[1.25px] rounded-[2rem]"
+        className="pointer-events-none absolute inset-0 rounded-[2rem]"
         style={{
-          background:
-            "linear-gradient(120deg, rgba(233,213,255,0.95), rgba(192,132,252,0.92), rgba(168,85,247,0.88))",
-          mask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
-          WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
-          padding: "1px",
+          // 1.5px line via inset shadow so it stays crisp on rounded corners
           boxShadow:
-            "0 0 0 1px rgba(216,180,254,0.22), 0 0 30px rgba(168,85,247,0.22), 0 0 58px rgba(192,132,252,0.14)",
+            "inset 0 0 0 1.5px rgba(199,210,254,0.55), 0 0 14px rgba(168,85,247,0.14)",
         }}
       />
 
-      {/* Card itself (back to “before” vibe) */}
+      {/* Card body: keep like before */}
       <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
-        {/* Subtle dark purple gradient overlay INSIDE the card (keeps the original look, just richer) */}
+        {/* Subtle dark purple gradient inside the card (the “tumedam lilla gradient vibe”) */}
         <div
           className="pointer-events-none absolute inset-0 rounded-[2rem]"
           style={{
             background:
-              "linear-gradient(135deg, rgba(88,28,135,0.22) 0%, rgba(59,130,246,0.00) 45%, rgba(147,51,234,0.16) 100%)",
+              "linear-gradient(135deg, rgba(64,18,104,0.22) 0%, rgba(11,22,52,0.00) 50%, rgba(99,102,241,0.10) 100%)",
           }}
         />
         <div className="relative">{children}</div>
@@ -141,7 +146,7 @@ export default function HomePage() {
       {/* Header */}
       <header className="w-full bg-[var(--vf-header)]">
         <div className="relative mx-auto flex max-w-5xl items-center px-4 py-1.5">
-          {/* Left: navigation menu */}
+          {/* Left: Menu */}
           <button
             aria-label="Open menu"
             onClick={() => setMenuOpen(true)}
@@ -150,21 +155,21 @@ export default function HomePage() {
             <span className="text-xl">☰</span>
           </button>
 
-          {/* Center: Logo (slightly smaller than before) */}
+          {/* Center: Logo (slightly smaller, “perfect fit”) */}
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2">
             <Link href="/" className="pointer-events-auto flex items-center">
               <Image
                 src="/brand/logo.svg"
                 alt="Ventfreely"
-                width={70}
-                height={18}
+                width={82}
+                height={22}
                 priority
                 className="opacity-95"
               />
             </Link>
           </div>
 
-          {/* Right: Account icon (WHITE) */}
+          {/* Right: Account ICON (WHITE) */}
           <div className="ml-auto">
             <button
               aria-label="Account"
@@ -184,6 +189,7 @@ export default function HomePage() {
           menuOpen ? "pointer-events-auto" : "pointer-events-none",
         ].join(" ")}
       >
+        {/* Backdrop */}
         <div
           onClick={() => setMenuOpen(false)}
           className={[
@@ -192,9 +198,10 @@ export default function HomePage() {
           ].join(" ")}
         />
 
+        {/* Panel */}
         <div
           className={[
-            "absolute left-0 top-0 h-full w-[288px] shadow-xl transition-transform duration-300",
+            "absolute left-0 top-0 h-full w-[280px] shadow-xl transition-transform duration-300",
             menuOpen ? "translate-x-0" : "-translate-x-full",
           ].join(" ")}
           style={{
@@ -203,7 +210,7 @@ export default function HomePage() {
           }}
         >
           <div className="flex items-center justify-between px-4 py-3">
-            <Image src="/brand/logo.svg" alt="Ventfreely" width={70} height={18} />
+            <Image src="/brand/logo.svg" alt="Ventfreely" width={78} height={20} />
             <button
               aria-label="Close menu"
               onClick={() => setMenuOpen(false)}
@@ -213,7 +220,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          <nav className="mt-4 flex flex-col gap-1 px-3 text-[14px] text-white/90">
+          <nav className="mt-4 flex flex-col gap-1 px-3 text-[14px] text-white/85">
             {[
               ["Home", "/"],
               ["Test", "/test"],
@@ -242,6 +249,7 @@ export default function HomePage() {
           accountOpen ? "pointer-events-auto" : "pointer-events-none",
         ].join(" ")}
       >
+        {/* Backdrop */}
         <div
           onClick={() => setAccountOpen(false)}
           className={[
@@ -250,9 +258,10 @@ export default function HomePage() {
           ].join(" ")}
         />
 
+        {/* Panel */}
         <div
           className={[
-            "absolute right-0 top-0 h-full w-[288px] shadow-xl transition-transform duration-300",
+            "absolute right-0 top-0 h-full w-[280px] shadow-xl transition-transform duration-300",
             accountOpen ? "translate-x-0" : "translate-x-full",
           ].join(" ")}
           style={{
@@ -276,14 +285,14 @@ export default function HomePage() {
             </button>
           </div>
 
+          {/* Auth menu content (shows correct state automatically) */}
           <div className="px-4 pt-4">
-            {/* AuthNav shows correct state (login/signup vs account/logout) */}
             <AuthNav />
           </div>
 
           <div className="mt-6 border-t border-white/10 px-4 pt-4">
             <p className="text-[12px] text-white/55 leading-relaxed">
-              Keep it simple. Come back whenever you need to talk things through.
+              Simple, calm, and quick to understand.
             </p>
           </div>
         </div>
@@ -376,7 +385,7 @@ export default function HomePage() {
             </div>
           </GlowCard>
 
-          {/* Action hub */}
+          {/* Action hub (not wrapping everything into one mega-card; just the meaningful boxes) */}
           <div className="mt-10 grid gap-4 text-left md:grid-cols-2">
             <GlowCard>
               <QuickCard
@@ -413,7 +422,7 @@ export default function HomePage() {
             <InsightsPreviewCard />
           </GlowCard>
 
-          {/* How it works */}
+          {/* How it works (section is plain; only small step cards are boxed) */}
           <div className="mt-14 text-left">
             <h2
               className="text-sm text-white/80"
@@ -470,11 +479,11 @@ export default function HomePage() {
               </div>
             </GlowCard>
 
-            {/* Example */}
+            {/* Example (kept, and not “pinkified”) */}
             <div className="mt-14">
               <div className="flex items-center justify-between text-[11px] text-white/60">
                 <span className="inline-flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/60" />
                   Example (not real data)
                 </span>
                 <span>Anonymous</span>
@@ -495,12 +504,14 @@ export default function HomePage() {
                 </GlowCard>
 
                 <GlowCard>
-                  <div className="px-3 py-2 text-white/90">You’re allowed to take up space with how you feel.</div>
+                  <div className="px-3 py-2 text-white/90">
+                    You’re allowed to take up space with how you feel.
+                  </div>
                 </GlowCard>
               </div>
             </div>
 
-            {/* Footer */}
+            {/* Tiny footer */}
             <div className="mt-14 text-center">
               <div className="mx-auto h-px w-full max-w-xl bg-white/10" />
               <p className="mt-4 text-[11px] text-white/45">
@@ -765,7 +776,7 @@ function DailyStatusCard() {
           >
             YOUR WEEK (DAILY)
           </p>
-          <p className="mt-2 text-[14px] text-white/85">{todayDone ? "Done today ✅" : "Not done today"}</p>
+          <p className="mt-2 text-[14px] text-white/85">{data ? "Loaded ✅" : "—"}</p>
         </div>
 
         <div className="text-right">
@@ -793,7 +804,7 @@ function DailyStatusCard() {
 
       <div className="mt-5 grid grid-cols-3 gap-3">
         <MiniStat label="This week" value={`${completedDays}/7`} />
-        <MiniStat label="Status" value={todayDone ? "Done" : "Start"} />
+        <MiniStat label="Status" value={seriesDates.has(data?.range?.end ?? "") ? "Done" : "Start"} />
         <MiniStat label="Trend" value={trendText(trend)} />
       </div>
 
@@ -807,7 +818,7 @@ function DailyStatusCard() {
             textTransform: "uppercase",
           }}
         >
-          {todayDone ? "View daily" : "Start daily"}
+          Open daily
         </Link>
 
         <div className="flex items-center gap-4">
