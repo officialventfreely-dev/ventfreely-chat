@@ -2,9 +2,9 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
+import { AppTopHeader } from "@/app/components/AppTopHeader";
 
 type Message = {
   id: number;
@@ -19,59 +19,125 @@ const CHAT_START_KEY = "vf_chat_start_ms";
 const SHOPIFY_CHECKOUT_URL =
   "https://ventfreely.com/products/ventfreely-unlimited-14-days?variant=53006364410120";
 
-/** tiny inline icons (no extra packages needed) */
-function IconUser(props: { className?: string }) {
+/**
+ * GlowCard – sama “ere lilla outline + glow outside” vibe nagu Home/Daily/Weekly.
+ */
+const PURPLE = "168,85,247"; // #A855F7
+const LINE_ALPHA = 0.85;
+const GLOW_ALPHA = 0.35;
+const SOFT_GLOW_ALPHA = 0.18;
+
+function GlowCard({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={props.className ?? "h-4 w-4"}
-      fill="none"
+    <div className={`relative ${className}`}>
+      <div
+        className="pointer-events-none absolute -inset-[10px] rounded-[2rem] blur-2xl"
+        style={{
+          background: `radial-gradient(closest-side, rgba(${PURPLE},${SOFT_GLOW_ALPHA}), transparent 62%)`,
+          opacity: 1,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 rounded-[2rem]"
+        style={{ boxShadow: `inset 0 0 0 1.5px rgba(${PURPLE},${LINE_ALPHA})` }}
+      />
+      <div
+        className="pointer-events-none absolute -inset-[2px] rounded-[2rem]"
+        style={{ boxShadow: `0 0 18px rgba(${PURPLE},${GLOW_ALPHA})` }}
+      />
+
+      <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[2rem]"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(64,18,104,0.22) 0%, rgba(11,22,52,0.00) 50%, rgba(99,102,241,0.10) 100%)",
+          }}
+        />
+        <div className="relative">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="text-[12px] text-white/60"
+      style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.10em" }}
     >
+      {children}
+    </p>
+  );
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/80">
+      {children}
+    </span>
+  );
+}
+
+/** Inline icons (no packages) */
+function IconSparkle(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={props.className ?? "h-4 w-4"} fill="none" aria-hidden="true">
       <path
-        d="M20 21a8 8 0 0 0-16 0"
+        d="M12 2l1.2 5.1L18 9l-4.8 1.9L12 16l-1.2-5.1L6 9l4.8-1.9L12 2Z"
         stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
       />
       <path
-        d="M12 13a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 13Z"
+        d="M19.5 13.5l.6 2.4 2.4.6-2.4.6-.6 2.4-.6-2.4-2.4-.6 2.4-.6.6-2.4Z"
         stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
       />
     </svg>
   );
 }
 
-function IconMenu(props: { open: boolean; className?: string }) {
-  // hamburger / X
-  return props.open ? (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={props.className ?? "h-4 w-4"}
-      fill="none"
-    >
+function IconLock(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={props.className ?? "h-4 w-4"} fill="none" aria-hidden="true">
       <path
-        d="M6 6l12 12M18 6L6 18"
+        d="M7.5 10V8.2A4.5 4.5 0 0 1 12 3.7 4.5 4.5 0 0 1 16.5 8.2V10"
         stroke="currentColor"
-        strokeWidth="1.8"
+        strokeWidth="1.7"
         strokeLinecap="round"
       />
-    </svg>
-  ) : (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={props.className ?? "h-4 w-4"}
-      fill="none"
-    >
       <path
-        d="M5 7h14M5 12h14M5 17h14"
+        d="M7 10h10a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V12a2 2 0 0 1 2-2Z"
         stroke="currentColor"
-        strokeWidth="1.8"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconClock(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={props.className ?? "h-4 w-4"} fill="none" aria-hidden="true">
+      <path
+        d="M12 21a9 9 0 1 0-9-9 9 9 0 0 0 9 9Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M12 7v5l3 2"
+        stroke="currentColor"
+        strokeWidth="1.7"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
@@ -79,7 +145,6 @@ function IconMenu(props: { open: boolean; className?: string }) {
 
 export default function ChatPage() {
   const router = useRouter();
-  const pathname = usePathname();
 
   // Chat state
   const [messages, setMessages] = useState<Message[]>([
@@ -106,10 +171,6 @@ export default function ChatPage() {
   // Timer for anonymous users
   const [secondsLeft, setSecondsLeft] = useState(FREE_SECONDS);
 
-  // UI state
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-
   const isLoggedIn = !!userEmail;
   const showGuestTimerUI = !isLoggedIn && !hasActiveSubscription;
   const showSignupWall = showGuestTimerUI && secondsLeft <= 0;
@@ -118,28 +179,11 @@ export default function ChatPage() {
     .toString()
     .padStart(1, "0")}:${(secondsLeft % 60).toString().padStart(2, "0")}`;
 
-  const navItems = useMemo(
-    () => [
-      { href: "/", label: "Home" },
-      { href: "/test", label: "Test" },
-      { href: "/chat", label: "Chat" },
-      { href: "/daily", label: "Daily" },
-      { href: "/weekly", label: "Weekly" },
-    ],
-    []
-  );
-
-  const isActive = (href: string) => {
-    if (!pathname) return false;
-    if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
-  };
-
-  // Close menus on route change
-  useEffect(() => {
-    setAccountMenuOpen(false);
-    setMobileNavOpen(false);
-  }, [pathname]);
+  const badge = useMemo(() => {
+    if (hasActiveSubscription) return { icon: <IconSparkle className="h-4 w-4" />, text: "Premium" };
+    if (isLoggedIn) return { icon: <IconLock className="h-4 w-4" />, text: "Logged in" };
+    return { icon: <IconClock className="h-4 w-4" />, text: "Guest" };
+  }, [hasActiveSubscription, isLoggedIn]);
 
   // 1) Check session + subscription + memory on mount
   useEffect(() => {
@@ -165,7 +209,7 @@ export default function ChatPage() {
           return;
         }
 
-        // Check subscriptions (same as your old code)
+        // Check subscriptions (kept as-is)
         const { data: subs, error: subsError } = await supabaseBrowser
           .from("subscriptions")
           .select("status,current_period_end")
@@ -300,13 +344,6 @@ export default function ChatPage() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
   const handleUnlockClick = () => {
     window.location.href = SHOPIFY_CHECKOUT_URL;
   };
@@ -364,390 +401,384 @@ export default function ChatPage() {
 
   if (checkingSession) {
     return (
-      <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center">
-        <div className="rounded-2xl bg-white px-5 py-3 shadow border border-purple-100 text-xs text-slate-600">
-          Checking your account…
+      <main className="min-h-screen w-full">
+        <div className="fixed inset-0 -z-10">
+          <div className="absolute inset-0" style={{ background: "var(--vf-bg)" }} />
+          <div className="pointer-events-none absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-[#A855F7]/20 blur-[120px]" />
+        </div>
+        <div className="min-h-screen flex items-center justify-center px-4">
+          <GlowCard className="w-full max-w-md">
+            <div className="p-5 text-left">
+              <Eyebrow>CHECKING</Eyebrow>
+              <p className="mt-2 text-[14px] text-white/85">Checking your account…</p>
+            </div>
+          </GlowCard>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen w-full bg-[#FAF8FF] text-slate-900">
-      {/* Header */}
-      <header className="w-full bg-[#401268] text-white">
-        <div className="mx-auto max-w-5xl px-4 md:px-6">
-          <div className="flex items-center justify-between py-2.5">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-2">
-              <div className="relative h-7 w-7 overflow-hidden rounded-lg bg-white/10 border border-white/10">
-                <Image
-                  src="/logo.svg"
-                  alt="Ventfreely"
-                  fill
-                  className="object-contain p-1"
-                  sizes="28px"
-                  priority
-                />
-              </div>
-              <span className="text-sm font-semibold tracking-tight">
-                Ventfreely
-              </span>
-            </Link>
+    <main className="min-h-screen w-full">
+      {/* Background */}
+      <div className="fixed inset-0 -z-10">
+        <div className="absolute inset-0" style={{ background: "var(--vf-bg)" }} />
+        <div className="pointer-events-none absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-[#A855F7]/20 blur-[120px]" />
+      </div>
 
-            {/* Desktop nav */}
-            <nav className="hidden md:flex items-center gap-1">
-              {navItems.map((item) => {
-                const active = isActive(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`rounded-full px-3 py-1.5 text-xs transition ${
-                      active ? "bg-white/15" : "hover:bg-white/10"
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
-
-            {/* Right */}
-            <div className="flex items-center gap-2">
-              {showGuestTimerUI && (
-                <div className="hidden sm:inline-flex items-center rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-violet-100/90">
-                  {secondsLeft > 0 ? `Free: ${formattedTime}` : "Free ended"}
-                </div>
-              )}
-
-              {/* Mobile nav toggle */}
-              <button
-                onClick={() => setMobileNavOpen((v) => !v)}
-                className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/15 transition"
-                aria-label="Menu"
-              >
-                <IconMenu open={mobileNavOpen} />
-              </button>
-
-              {/* Account */}
-              <div className="relative">
-                <button
-                  onClick={() => setAccountMenuOpen((v) => !v)}
-                  className="inline-flex h-9 items-center gap-2 rounded-full bg-white/10 px-2.5 hover:bg-white/15 transition"
-                  aria-label="Account"
-                >
-                  <IconUser className="h-4 w-4" />
-                  <span className="hidden sm:inline text-xs text-violet-100/90">
-                    {isLoggedIn ? "Account" : "Sign in"}
-                  </span>
-                </button>
-
-                {accountMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-48 rounded-xl bg-white text-slate-800 shadow-lg border border-violet-100 z-30 overflow-hidden">
-                    <div className="px-3 py-2 border-b border-violet-100">
-                      <div className="text-[11px] text-slate-500">Signed in as</div>
-                      <div className="text-xs font-medium truncate">
-                        {isLoggedIn ? userEmail : "Guest"}
-                      </div>
-                    </div>
-
-                    {!isLoggedIn ? (
-                      <div className="py-1">
-                        <button
-                          onClick={() => {
-                            setAccountMenuOpen(false);
-                            handleSignupClick();
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50"
-                        >
-                          Sign up
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAccountMenuOpen(false);
-                            handleLoginClick();
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50"
-                        >
-                          Log in
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="py-1">
-                        <button
-                          onClick={() => {
-                            setAccountMenuOpen(false);
-                            router.push("/account");
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50"
-                        >
-                          Account
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAccountMenuOpen(false);
-                            handleLogout();
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50"
-                        >
-                          Log out
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Mobile nav */}
-          {mobileNavOpen && (
-            <div className="md:hidden pb-3">
-              <div className="grid grid-cols-2 gap-2">
-                {navItems.map((item) => {
-                  const active = isActive(item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`rounded-xl px-3 py-2 text-xs transition ${
-                        active ? "bg-white/15" : "bg-white/10 hover:bg-white/15"
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      </header>
+      {/* Unified header */}
+      <AppTopHeader active="chat" />
 
       {/* PAYWALL overlay (402 from /api/chat) */}
       {paywallOpen && !showSignupWall && (
-        <div className="fixed inset-0 z-[75] flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
-            onClick={() => setPaywallOpen(false)}
-          />
-          <div className="relative mx-4 w-full max-w-[440px]">
-            <div className="rounded-3xl border border-violet-200/70 bg-white/90 backdrop-blur-md shadow-2xl overflow-hidden">
-              <div className="px-5 pt-5 pb-4 bg-[#401268] text-white">
-                <div className="text-xs opacity-90">Premium required</div>
-                <h3 className="mt-1 text-base font-semibold tracking-tight">
-                  Your free trial has ended
-                </h3>
-                <p className="mt-1 text-xs text-white/85">
-                  Unlock Premium to keep chatting without limits.
-                </p>
-              </div>
-
-              <div className="px-5 py-4">
-                <div className="rounded-2xl border border-violet-200/70 bg-white px-4 py-3 text-xs text-slate-700">
-                  <div className="font-medium text-slate-900">Includes</div>
-                  <ul className="mt-1 list-disc pl-4 space-y-1">
-                    <li>Unlimited chat</li>
-                    <li>Saved memory summary</li>
-                    <li>Daily & Weekly features</li>
-                  </ul>
-
-                  {paywallAccess?.trialEndsAt && (
-                    <p className="mt-2 text-[11px] text-slate-500">
-                      Trial ended:{" "}
-                      <span className="font-medium">
-                        {new Date(paywallAccess.trialEndsAt).toLocaleString()}
-                      </span>
-                    </p>
-                  )}
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2">
-                  <button
-                    onClick={handleUnlockClick}
-                    className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-white bg-[#401268] hover:brightness-110 active:scale-[0.99] transition"
-                  >
-                    Unlock Premium
-                  </button>
-                  <button
-                    onClick={() => setPaywallOpen(false)}
-                    className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-[#401268] bg-white border border-violet-200 hover:bg-violet-50 active:scale-[0.99] transition"
-                  >
-                    Not now
-                  </button>
-                </div>
-
-                <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
-                  Ventfreely is a supportive AI companion, not a therapist. If you’re in
-                  immediate danger, contact local emergency services.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <OverlayCard
+          eyebrow="✨ PREMIUM REQUIRED"
+          title="Your free trial has ended"
+          text="Unlock Premium to keep chatting without limits."
+          footnote={
+            paywallAccess?.trialEndsAt
+              ? `Trial ended: ${new Date(paywallAccess.trialEndsAt).toLocaleString()}`
+              : null
+          }
+          primaryText="Unlock Premium"
+          primaryOnClick={handleUnlockClick}
+          secondaryText="Not now"
+          secondaryOnClick={() => setPaywallOpen(false)}
+          bullets={["Unlimited chat", "Saved memory summary", "Daily & Weekly features"]}
+        />
       )}
 
       {/* SIGNUP wall (guest after 2 min) */}
       {showSignupWall && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
-          <div className="relative mx-4 w-full max-w-[440px]">
-            <div className="rounded-3xl border border-violet-200/70 bg-white/90 backdrop-blur-md shadow-2xl overflow-hidden">
-              <div className="px-5 pt-5 pb-4 bg-[#401268] text-white">
-                <div className="text-xs opacity-90">Guest session ended</div>
-                <h3 className="mt-1 text-base font-semibold tracking-tight">
-                  Create an account to continue
-                </h3>
-                <p className="mt-1 text-xs text-white/85">
-                  Save your chat so you don’t have to start over.
-                </p>
-              </div>
-
-              <div className="px-5 py-4">
-                <div className="grid grid-cols-1 gap-2">
-                  <button
-                    onClick={handleSignupClick}
-                    className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-white bg-[#401268] hover:brightness-110 active:scale-[0.99] transition"
-                  >
-                    Create account
-                  </button>
-                  <button
-                    onClick={handleLoginClick}
-                    className="w-full rounded-2xl px-4 py-2.5 text-sm font-semibold text-[#401268] bg-white border border-violet-200 hover:bg-violet-50 active:scale-[0.99] transition"
-                  >
-                    I already have an account
-                  </button>
-                </div>
-
-                <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
-                  Ventfreely is a supportive AI companion, not a therapist. If you’re in
-                  immediate danger, contact local emergency services.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <OverlayCard
+          eyebrow="⏳ GUEST SESSION ENDED"
+          title="Create an account to continue"
+          text="Save your chat so you don’t have to start over."
+          primaryText="Create account"
+          primaryOnClick={handleSignupClick}
+          secondaryText="I already have an account"
+          secondaryOnClick={handleLoginClick}
+        />
       )}
 
       {/* Content */}
-      <div className="mx-auto max-w-5xl px-4 py-5 md:px-6 md:py-7">
+      <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
         <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-start">
           {/* Chat */}
-          <section className="space-y-3">
-            <div className="rounded-2xl bg-white/70 border border-violet-200/60 px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h1 className="text-sm font-semibold text-[#2A1740]">Chat</h1>
-                  <p className="mt-0.5 text-xs text-slate-700">
-                    Say what’s heavy. I’ll listen and respond gently.
-                  </p>
-                </div>
-                {showGuestTimerUI && (
-                  <div className="text-[11px] text-slate-600">
-                    {secondsLeft > 0 ? formattedTime : "Ended"}
-                  </div>
-                )}
-              </div>
-
-              {isLoggedIn && memorySummary && (
-                <div className="mt-3 rounded-xl bg-white border border-violet-200/70 px-3 py-2 text-[11px] text-slate-700">
-                  <div className="font-medium text-[#2A1740] mb-1">Last time:</div>
-                  <p className="line-clamp-3">{memorySummary}</p>
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <span className="text-[10px] text-slate-500">
-                      Saved to help you continue.
-                    </span>
-                    <button
-                      onClick={handleClearMemory}
-                      disabled={isClearingMemory}
-                      className="text-[10px] text-[#401268] hover:underline disabled:opacity-60"
+          <section className="space-y-4">
+            {/* Header card */}
+            <GlowCard>
+              <div className="p-5 md:p-6 text-left">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <Eyebrow>CHAT</Eyebrow>
+                    <h1
+                      className="mt-2 text-[20px] font-semibold text-white/95"
+                      style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
                     >
-                      {isClearingMemory ? "Clearing…" : "Clear"}
-                    </button>
+                      Say what’s heavy.
+                    </h1>
+                    <p className="mt-1 text-[13px] leading-relaxed text-white/75">
+                      I’ll listen and respond gently.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-2">
+                    {showGuestTimerUI ? (
+                      <Pill>
+                        <IconClock className="h-4 w-4" />
+                        Free: {secondsLeft > 0 ? formattedTime : "Ended"}
+                      </Pill>
+                    ) : (
+                      <Pill>
+                        {badge.icon}
+                        {badge.text}
+                      </Pill>
+                    )}
                   </div>
                 </div>
-              )}
-            </div>
+
+                {/* memory */}
+                {isLoggedIn && memorySummary ? (
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-[11px] text-white/55">Last time</p>
+                    <p className="mt-2 text-[12px] leading-relaxed text-white/85 line-clamp-4">
+                      {memorySummary}
+                    </p>
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <span className="text-[11px] text-white/50">Saved to help you continue.</span>
+
+                      <button
+                        onClick={handleClearMemory}
+                        disabled={isClearingMemory}
+                        className="text-[11px] text-white/70 hover:text-white disabled:opacity-60"
+                      >
+                        {isClearingMemory ? "Clearing…" : "Clear"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* quick account actions */}
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    {isLoggedIn ? (
+                      <>
+                        <Pill>👤 {userEmail}</Pill>
+                        {hasActiveSubscription ? (
+                          <Pill>
+                            <IconSparkle className="h-4 w-4" />
+                            Premium
+                          </Pill>
+                        ) : (
+                          <Pill>🫧 Trial/Free</Pill>
+                        )}
+                      </>
+                    ) : (
+                      <Pill>🙈 Guest</Pill>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {isLoggedIn ? (
+                      <>
+                        <button
+                          onClick={() => router.push("/account")}
+                          className="text-[12px] text-white/60 hover:text-white/80"
+                        >
+                          Account →
+                        </button>
+                        <button
+                          onClick={handleLogout}
+                          className="text-[12px] text-white/60 hover:text-white/80"
+                        >
+                          Log out
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={handleLoginClick}
+                          className="text-[12px] text-white/60 hover:text-white/80"
+                        >
+                          Log in →
+                        </button>
+                        <button
+                          onClick={handleSignupClick}
+                          className="text-[12px] text-white/60 hover:text-white/80"
+                        >
+                          Create account
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </GlowCard>
 
             {/* Messages */}
-            <div className="flex flex-col gap-2 max-h-[440px] min-h-[280px] overflow-y-auto rounded-2xl bg-white/70 border border-violet-200/60 px-3 py-3">
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[82%] px-3 py-2 rounded-2xl text-xs md:text-sm leading-relaxed ${
-                      m.role === "user"
-                        ? "bg-[#401268] text-white rounded-br-[1.4rem]"
-                        : "bg-white text-slate-900 border border-slate-200/60 rounded-bl-[1.4rem]"
-                    }`}
-                  >
-                    {m.text}
-                  </div>
-                </div>
-              ))}
+            <GlowCard>
+              <div className="p-3 md:p-4">
+                <div className="flex flex-col gap-2 max-h-[520px] min-h-[340px] overflow-y-auto rounded-[1.5rem] border border-white/10 bg-black/10 px-3 py-3">
+                  {messages.map((m) => (
+                    <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={[
+                          "max-w-[82%] px-3 py-2 text-[12px] md:text-[13px] leading-relaxed",
+                          "rounded-2xl shadow-[0_14px_30px_rgba(0,0,0,0.22)]",
+                          m.role === "user"
+                            ? "bg-white text-[var(--vf-ink)] rounded-br-[1.4rem]"
+                            : "bg-white/10 text-white border border-white/15 rounded-bl-[1.4rem]",
+                        ].join(" ")}
+                      >
+                        {m.text}
+                      </div>
+                    </div>
+                  ))}
 
-              {isLoadingReply && (
-                <div className="flex justify-start">
-                  <div className="max-w-[70%] px-3 py-2 rounded-2xl rounded-bl-[1.4rem] bg-white border border-slate-200/60 text-slate-700 text-xs flex items-center gap-2">
-                    <span className="flex gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#401268] animate-pulse" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#A268F5] animate-pulse [animation-delay:120ms]" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#F5A5E0] animate-pulse [animation-delay:240ms]" />
-                    </span>
-                    <span>Thinking…</span>
-                  </div>
+                  {isLoadingReply && (
+                    <div className="flex justify-start">
+                      <div className="max-w-[70%] px-3 py-2 rounded-2xl rounded-bl-[1.4rem] bg-white/10 border border-white/15 text-white/80 text-[12px] flex items-center gap-2">
+                        <span className="flex gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white/80 animate-pulse" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-pulse [animation-delay:120ms]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-white/40 animate-pulse [animation-delay:240ms]" />
+                        </span>
+                        <span>Thinking…</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            </GlowCard>
 
             {/* Error */}
-            {error && (
-              <div className="text-[11px] text-amber-800 bg-amber-50/80 border border-amber-100 rounded-xl px-3 py-2">
-                {error}
+            {error ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left">
+                <p className="text-[12px] text-white/85">⚠️ {error}</p>
               </div>
-            )}
+            ) : null}
 
             {/* Input */}
-            <div className="flex gap-2">
-              <input
-                className="flex-1 rounded-xl bg-white/80 border border-violet-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5] disabled:opacity-50"
-                placeholder={showSignupWall ? "Create an account to continue…" : "Type here…"}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                disabled={showSignupWall || isLoadingReply}
-              />
-              <button
-                onClick={handleSend}
-                className="rounded-xl px-3.5 py-2 text-sm font-medium bg-[#401268] text-white hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!input.trim() || showSignupWall || isLoadingReply}
-              >
-                Send
-              </button>
-            </div>
+            <GlowCard>
+              <div className="p-4 md:p-5">
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 rounded-full bg-white/10 border border-white/15 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/35 focus:ring-2 focus:ring-white/20 focus:border-white/25 disabled:opacity-50"
+                    placeholder={showSignupWall ? "Create an account to continue…" : "Type here…"}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    disabled={showSignupWall || isLoadingReply}
+                  />
+
+                  <button
+                    onClick={handleSend}
+                    className="rounded-full px-6 py-3 text-[var(--vf-ink)] bg-white hover:brightness-95 active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      fontFamily: "var(--font-subheading)",
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                    }}
+                    disabled={!input.trim() || showSignupWall || isLoadingReply}
+                  >
+                    Send
+                  </button>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between">
+                  <Link href="/daily" className="text-[12px] text-white/60 hover:text-white/80">
+                    Daily →
+                  </Link>
+                  <span className="text-[11px] text-white/45">No judgement. No pressure.</span>
+                </div>
+              </div>
+            </GlowCard>
           </section>
 
-          {/* Quiet legal/safety */}
-          <aside className="space-y-3">
-            <div className="rounded-2xl bg-white/70 border border-violet-200/60 px-4 py-3">
-              <div className="text-xs font-semibold text-[#2A1740]">Safety</div>
-              <p className="mt-2 text-xs text-slate-700 leading-relaxed">
-                Ventfreely is an AI companion, not a therapist. If you’re in immediate danger
-                or feel like you might hurt yourself or someone else, contact local emergency
-                services or someone you trust.
-              </p>
-            </div>
+          {/* Safety */}
+          <aside className="space-y-4">
+            <GlowCard>
+              <div className="p-5 md:p-6 text-left">
+                <Eyebrow>SAFETY</Eyebrow>
+                <p className="mt-2 text-[13px] leading-relaxed text-white/75">
+                  Ventfreely is an AI companion, not a therapist. If you’re in immediate danger
+                  or feel like you might hurt yourself or someone else, contact local emergency
+                  services or someone you trust.
+                </p>
+              </div>
+            </GlowCard>
+
+            <GlowCard>
+              <div className="p-5 md:p-6 text-left">
+                <Eyebrow>QUICK LINKS</Eyebrow>
+                <div className="mt-3 flex flex-col gap-2 text-[12px] text-white/70">
+                  <Link href="/weekly" className="hover:text-white/85">
+                    Weekly →
+                  </Link>
+                  <Link href="/insights" className="hover:text-white/85">
+                    Insights →
+                  </Link>
+                  <Link href="/test" className="hover:text-white/85">
+                    Quick test →
+                  </Link>
+                </div>
+              </div>
+            </GlowCard>
           </aside>
         </div>
       </div>
     </main>
+  );
+}
+
+function OverlayCard({
+  eyebrow,
+  title,
+  text,
+  bullets,
+  footnote,
+  primaryText,
+  primaryOnClick,
+  secondaryText,
+  secondaryOnClick,
+}: {
+  eyebrow: string;
+  title: string;
+  text: string;
+  bullets?: string[];
+  footnote?: string | null;
+  primaryText: string;
+  primaryOnClick: () => void;
+  secondaryText: string;
+  secondaryOnClick: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={secondaryOnClick} />
+      <div className="relative w-full max-w-[480px]">
+        <GlowCard>
+          <div className="p-5 md:p-6 text-left">
+            <Eyebrow>{eyebrow}</Eyebrow>
+            <h3
+              className="mt-2 text-[18px] font-semibold text-white/95"
+              style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
+            >
+              {title}
+            </h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-white/75">{text}</p>
+
+            {bullets?.length ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-[12px] text-white/80 font-semibold">Includes</p>
+                <ul className="mt-2 list-disc pl-5 text-[12px] text-white/75 space-y-1">
+                  {bullets.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+                {footnote ? <p className="mt-3 text-[11px] text-white/55">{footnote}</p> : null}
+              </div>
+            ) : null}
+
+            <div className="mt-5 grid grid-cols-1 gap-2">
+              <button
+                onClick={primaryOnClick}
+                className="w-full rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99]"
+                style={{
+                  fontFamily: "var(--font-subheading)",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                }}
+              >
+                {primaryText}
+              </button>
+
+              <button
+                onClick={secondaryOnClick}
+                className="w-full rounded-full border border-white/20 bg-white/10 px-6 py-3 text-white transition hover:bg-white/15 active:scale-[0.99]"
+                style={{
+                  fontFamily: "var(--font-subheading)",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                }}
+              >
+                {secondaryText}
+              </button>
+            </div>
+
+            <p className="mt-4 text-[10px] text-white/50 leading-relaxed">
+              Ventfreely is a supportive AI companion, not a therapist. If you’re in immediate danger, contact local
+              emergency services.
+            </p>
+          </div>
+        </GlowCard>
+      </div>
+    </div>
   );
 }

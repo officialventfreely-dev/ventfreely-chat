@@ -1,15 +1,154 @@
+// FILE: app/signup/page.tsx
 "use client";
 
 export const dynamic = "force-dynamic";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabaseBrowser";
+import { AppTopHeader } from "@/app/components/AppTopHeader";
+
+/**
+ * GlowCard – sama “ere lilla outline + glow outside” vibe nagu Chat/Daily/Weekly/Login.
+ */
+const PURPLE = "168,85,247"; // #A855F7
+const LINE_ALPHA = 0.85;
+const GLOW_ALPHA = 0.35;
+const SOFT_GLOW_ALPHA = 0.18;
+
+function GlowCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`relative ${className}`}>
+      <div
+        className="pointer-events-none absolute -inset-[10px] rounded-[2rem] blur-2xl"
+        style={{
+          background: `radial-gradient(closest-side, rgba(${PURPLE},${SOFT_GLOW_ALPHA}), transparent 62%)`,
+          opacity: 1,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 rounded-[2rem]"
+        style={{ boxShadow: `inset 0 0 0 1.5px rgba(${PURPLE},${LINE_ALPHA})` }}
+      />
+      <div
+        className="pointer-events-none absolute -inset-[2px] rounded-[2rem]"
+        style={{ boxShadow: `0 0 18px rgba(${PURPLE},${GLOW_ALPHA})` }}
+      />
+
+      <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[2rem]"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(64,18,104,0.22) 0%, rgba(11,22,52,0.00) 50%, rgba(99,102,241,0.10) 100%)",
+          }}
+        />
+        <div className="relative">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[12px] text-white/60" style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.10em" }}>
+      {children}
+    </p>
+  );
+}
+
+function IconMail({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
+      <path
+        d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.5 7.5 12 12.2l6.5-4.7"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconLock({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
+      <path
+        d="M7 11V8.8A5 5 0 0 1 12 4a5 5 0 0 1 5 4.8V11"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M7.5 11h9A2.5 2.5 0 0 1 19 13.5v5A2.5 2.5 0 0 1 16.5 21h-9A2.5 2.5 0 0 1 5 18.5v-5A2.5 2.5 0 0 1 7.5 11Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconGoogle({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
+      <path
+        d="M20 12.2c0-.6-.1-1.2-.2-1.8H12v3.4h4.5a3.9 3.9 0 0 1-1.7 2.5v2.1h2.7c1.6-1.5 2.5-3.7 2.5-6.2Z"
+        fill="currentColor"
+        opacity="0.9"
+      />
+      <path
+        d="M12 21c2.3 0 4.2-.8 5.6-2.1l-2.7-2.1c-.8.5-1.8.9-2.9.9-2.2 0-4.1-1.5-4.8-3.6H4.4v2.2A9 9 0 0 0 12 21Z"
+        fill="currentColor"
+        opacity="0.6"
+      />
+      <path
+        d="M7.2 14.1A5.4 5.4 0 0 1 7 12c0-.7.1-1.4.3-2.1V7.7H4.4A9 9 0 0 0 3 12c0 1.5.4 3 1.4 4.3l2.8-2.2Z"
+        fill="currentColor"
+        opacity="0.35"
+      />
+      <path
+        d="M12 6.3c1.3 0 2.4.5 3.3 1.3l2.4-2.4A8.3 8.3 0 0 0 12 3a9 9 0 0 0-7.6 4.7l2.8 2.2C7.9 7.8 9.8 6.3 12 6.3Z"
+        fill="currentColor"
+        opacity="0.45"
+      />
+    </svg>
+  );
+}
+
+function Note({
+  title,
+  text,
+  tone = "neutral",
+}: {
+  title: string;
+  text: string;
+  tone?: "neutral" | "success";
+}) {
+  const box =
+    tone === "success"
+      ? "border-emerald-200/30 bg-emerald-400/10"
+      : "border-white/10 bg-white/5";
+  return (
+    <div className={`rounded-2xl border ${box} p-4`}>
+      <p className="text-[12px] text-white/80 font-semibold">{title}</p>
+      <p className="mt-2 text-[12px] leading-relaxed text-white/70">{text}</p>
+    </div>
+  );
+}
 
 export default function SignupPage() {
   const router = useRouter();
 
-  // ✅ runtime query parsing (no window usage during render)
+  // runtime query parsing
   const [nextPath, setNextPath] = useState("/chat");
   const [fromCheckout, setFromCheckout] = useState(false);
   const [oauthRedirectTo, setOauthRedirectTo] = useState<string>("");
@@ -24,10 +163,17 @@ export default function SignupPage() {
     setFromCheckout(params.get("from") === "checkout");
 
     const origin = window.location.origin;
-    setOauthRedirectTo(
-      `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
-    );
+    setOauthRedirectTo(`${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`);
   }, []);
+
+  const title = useMemo(() => {
+    if (fromCheckout) return "Create your account to unlock access";
+    if (nextPath.startsWith("/daily")) return "Create account to continue Daily";
+    if (nextPath.startsWith("/weekly")) return "Create account to continue Weekly";
+    if (nextPath.startsWith("/insights")) return "Create account to view Insights";
+    if (nextPath.startsWith("/account")) return "Create account to view Account";
+    return "Create your Ventfreely account";
+  }, [fromCheckout, nextPath]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -68,11 +214,10 @@ export default function SignupPage() {
       }
 
       // 2) Log in immediately (if email confirmation is disabled)
-      const { error: signInError } =
-        await supabaseBrowser.auth.signInWithPassword({
-          email: normalizedEmail,
-          password: trimmedPassword,
-        });
+      const { error: signInError } = await supabaseBrowser.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: trimmedPassword,
+      });
 
       if (signInError) {
         setError(signInError.message);
@@ -111,188 +256,162 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center px-4">
-      <div className="w-full max-w-4xl grid gap-6 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-stretch">
-        {/* Left: brand + explanation */}
-        <section className="hidden md:flex flex-col justify-center rounded-3xl bg-gradient-to-br from-[#401268] via-[#5E36B5] to-[#F5A5E0] text-white p-8 shadow-lg relative overflow-hidden">
-          <div className="absolute inset-0 opacity-15 pointer-events-none">
-            <div className="w-40 h-40 rounded-full bg-white/30 blur-3xl absolute -top-10 -left-10" />
-            <div className="w-56 h-56 rounded-full bg-white/20 blur-3xl absolute bottom-0 right-0" />
-          </div>
+    <main className="min-h-screen w-full" style={{ color: "white" }}>
+      {/* Background */}
+      <div className="fixed inset-0 -z-10">
+        <div className="absolute inset-0" style={{ background: "var(--vf-bg)" }} />
+        <div className="pointer-events-none absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-[#A855F7]/20 blur-[120px]" />
+      </div>
 
-          <div className="relative z-10 space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">
-                <span className="text-xs font-semibold tracking-tight">VF</span>
-              </div>
-              <div className="flex flex-col leading-tight">
-                <span className="text-sm font-semibold tracking-tight">
-                  Ventfreely
-                </span>
-                <span className="text-[11px] text-violet-50/90">
-                  Gentle space to vent, not a therapist
-                </span>
-              </div>
-            </div>
+      {/* Unified header */}
+      <AppTopHeader />
 
-            <h1 className="text-2xl font-semibold leading-snug">
-              Create your Ventfreely account
-            </h1>
-
-            <p className="text-sm text-violet-50/90 max-w-md">
-              Save your chat, come back anytime, and continue without starting
-              from zero.
-            </p>
-
-            <ul className="space-y-1 text-xs text-violet-50/90">
-              <li>• Continue saved conversations.</li>
-              <li>• Access from any device when logged in.</li>
-              <li>• A calm place to unload heavy thoughts.</li>
-            </ul>
-
-            <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-              <span>You’ll return to {nextPath} after signup</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Right: signup form */}
-        <section className="rounded-3xl bg-white shadow-lg border border-violet-100 p-6 md:p-8 flex flex-col justify-center">
-          <div className="space-y-4">
-            <div className="md:hidden flex items-center gap-2 mb-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#401268]/10">
-                <span className="text-xs font-semibold tracking-tight text-[#401268]">
-                  VF
-                </span>
-              </div>
-              <div className="flex flex-col leading-tight">
-                <span className="text-sm font-semibold tracking-tight text-[#2A1740]">
-                  Ventfreely
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  Gentle space to vent
-                </span>
-              </div>
-            </div>
-
-            {fromCheckout && (
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-[11px] text-emerald-800 mb-1">
-                <p className="font-medium">Payment confirmed 💜</p>
-                <p className="mt-1 leading-relaxed">
-                  Please create your account using the{" "}
-                  <strong>same email</strong> you used at checkout, so we can
-                  link your access.
+      <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
+        <section className="mx-auto max-w-xl">
+          <GlowCard>
+            <div className="px-6 py-9 md:px-8">
+              <div className="text-left">
+                <Eyebrow>CREATE ACCOUNT</Eyebrow>
+                <h1
+                  className="mt-2 text-[26px] font-semibold text-white/95 md:text-[32px]"
+                  style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
+                >
+                  {title}
+                </h1>
+                <p className="mt-2 text-[13px] leading-relaxed text-white/75">
+                  Calm, private, and simple. You’ll return to{" "}
+                  <span className="text-white/90 font-semibold">{nextPath}</span>.
                 </p>
               </div>
-            )}
 
-            {!fromCheckout && (
-              <>
-                <h2 className="text-lg font-semibold text-[#2A1740]">
-                  Sign up to continue
-                </h2>
-                <p className="text-xs text-slate-600">
-                  Create an account to save your chat and come back anytime.
-                </p>
-              </>
-            )}
-
-            {/* ✅ Google signup */}
-            <button
-              onClick={handleGoogleSignup}
-              disabled={loadingGoogle || loadingEmail}
-              className="w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-semibold text-[#2A1740] shadow-sm hover:bg-violet-50 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {loadingGoogle ? "Connecting to Google…" : "Continue with Google"}
-            </button>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-violet-200/60" />
-              <span className="text-[11px] text-slate-500">or</span>
-              <div className="h-px flex-1 bg-violet-200/60" />
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="space-y-1 text-sm">
-                <label
-                  htmlFor="email"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  inputMode="email"
-                  className="w-full rounded-2xl border border-violet-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5]"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onBlur={normalizeEmail}
-                  disabled={loadingEmail || loadingGoogle}
-                />
-              </div>
-
-              <div className="space-y-1 text-sm">
-                <label
-                  htmlFor="password"
-                  className="block text-xs font-medium text-slate-700"
-                >
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  autoComplete="new-password"
-                  className="w-full rounded-2xl border border-violet-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#A268F5] focus:border-[#A268F5]"
-                  placeholder="At least 6 characters"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loadingEmail || loadingGoogle}
-                />
-              </div>
-
-              {error && (
-                <div className="rounded-2xl border border-amber-100 bg-amber-50/90 px-3 py-2 text-[11px] text-amber-800">
-                  {error}
+              {/* Checkout note */}
+              {fromCheckout ? (
+                <div className="mt-6">
+                  <Note
+                    tone="success"
+                    title="Payment confirmed 💜"
+                    text="Please create your account using the same email you used at checkout, so we can link your access."
+                  />
+                </div>
+              ) : (
+                <div className="mt-6">
+                  <Note
+                    title="What you get"
+                    text="Saved chat, access from any device, and a calm place to unload heavy thoughts."
+                  />
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={loadingEmail || loadingGoogle}
-                className="w-full rounded-2xl bg-[#401268] text-white text-sm font-semibold py-3 shadow-md shadow-[#401268]/25 hover:brightness-110 active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {loadingEmail ? "Creating your account…" : "Create account"}
-              </button>
-            </form>
-
-            <div className="mt-3 text-[11px] text-slate-500 flex items-center justify-between">
-              <p>
-                Already have an account?{" "}
+              {/* Google */}
+              <div className="mt-6">
                 <button
-                  onClick={() =>
-                    router.push(`/login?next=${encodeURIComponent(nextPath)}`)
-                  }
-                  className="text-[#401268] font-medium hover:underline"
+                  onClick={handleGoogleSignup}
+                  disabled={loadingGoogle || loadingEmail}
+                  className="w-full rounded-full border border-white/15 bg-white/10 px-5 py-3 text-left text-[13px] text-white/90 transition hover:bg-white/15 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Log in
+                  <span className="flex items-center gap-3">
+                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 border border-white/10">
+                      <IconGoogle className="h-4 w-4 text-white/90" />
+                    </span>
+                    <span className="font-semibold">
+                      {loadingGoogle ? "Connecting to Google…" : "Continue with Google"}
+                    </span>
+                  </span>
                 </button>
-              </p>
-              <p className="hidden sm:block">
-                Ventfreely is a <span className="italic">supportive chat</span>,
-                not professional care.
-              </p>
-            </div>
 
-            <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
-              If you&apos;re in immediate danger or feel like you might hurt yourself,
-              contact local emergency services right now.
-            </p>
-          </div>
+                {/* Divider */}
+                <div className="my-5 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-white/10" />
+                  <span className="text-[11px] text-white/45">or</span>
+                  <div className="h-px flex-1 bg-white/10" />
+                </div>
+
+                {/* Email form */}
+                <form onSubmit={handleSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] text-white/55 mb-1">Email</label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/45">
+                        <IconMail />
+                      </span>
+                      <input
+                        type="email"
+                        autoComplete="email"
+                        inputMode="email"
+                        className="w-full rounded-full bg-white/10 border border-white/15 pl-11 pr-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:ring-2 focus:ring-white/20 focus:border-white/25"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        onBlur={normalizeEmail}
+                        disabled={loadingEmail || loadingGoogle}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-white/55 mb-1">Password</label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/45">
+                        <IconLock />
+                      </span>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        className="w-full rounded-full bg-white/10 border border-white/15 pl-11 pr-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:ring-2 focus:ring-white/20 focus:border-white/25"
+                        placeholder="At least 6 characters"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        disabled={loadingEmail || loadingGoogle}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[12px] text-white/85">
+                      <span className="mr-2">⚠️</span>
+                      {error}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loadingEmail || loadingGoogle}
+                    className="mt-2 w-full rounded-full bg-white px-6 py-3 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
+                    style={{
+                      fontFamily: "var(--font-subheading)",
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {loadingEmail ? "Creating…" : "Create account"}
+                  </button>
+                </form>
+
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <p className="text-[12px] text-white/60">
+                    Already have an account?{" "}
+                    <Link
+                      href={`/login?next=${encodeURIComponent(nextPath)}`}
+                      className="text-white/85 hover:text-white underline underline-offset-4 decoration-white/25"
+                    >
+                      Log in
+                    </Link>
+                  </p>
+
+                  <Link href="/" className="text-[12px] text-white/55 hover:text-white/75">
+                    Back home
+                  </Link>
+                </div>
+
+                <p className="mt-4 text-[10px] leading-relaxed text-white/45">
+                  Ventfreely is a supportive AI companion, not a therapist. If you’re in immediate danger, contact local
+                  emergency services right now.
+                </p>
+              </div>
+            </div>
+          </GlowCard>
         </section>
       </div>
     </main>

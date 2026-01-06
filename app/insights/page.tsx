@@ -2,9 +2,9 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { Montserrat, Oswald, Barlow_Condensed } from "next/font/google";
+import { AppTopHeader } from "@/app/components/AppTopHeader";
 
 const CHECKOUT_URL =
   "https://ventfreely.com/checkouts/cn/hWN7GGnQzaRXVfX1lEc8TNBb/en-ee?_r=AQABKeCP8HYH1psvfNVgYdhHcOQv4nKIXPtf9iIbwGwZYbY&preview_theme_id=191156912392";
@@ -70,6 +70,76 @@ function fmtRange(range?: { start: string; end: string } | null) {
   return `${range.start} → ${range.end}`;
 }
 
+/**
+ * GlowCard – sama “ere lilla outline + glow outside” vibe nagu Home/Daily/Weekly.
+ */
+const PURPLE = "168,85,247"; // #A855F7
+const LINE_ALPHA = 0.85;
+const GLOW_ALPHA = 0.35;
+const SOFT_GLOW_ALPHA = 0.18;
+
+function GlowCard({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`relative ${className}`}>
+      <div
+        className="pointer-events-none absolute -inset-[10px] rounded-[2rem] blur-2xl"
+        style={{
+          background: `radial-gradient(closest-side, rgba(${PURPLE},${SOFT_GLOW_ALPHA}), transparent 62%)`,
+          opacity: 1,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 rounded-[2rem]"
+        style={{
+          boxShadow: `inset 0 0 0 1.5px rgba(${PURPLE},${LINE_ALPHA})`,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute -inset-[2px] rounded-[2rem]"
+        style={{
+          boxShadow: `0 0 18px rgba(${PURPLE},${GLOW_ALPHA})`,
+        }}
+      />
+
+      <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[2rem]"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(64,18,104,0.22) 0%, rgba(11,22,52,0.00) 50%, rgba(99,102,241,0.10) 100%)",
+          }}
+        />
+        <div className="relative">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="text-[12px] text-white/60"
+      style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.10em" }}
+    >
+      {children}
+    </p>
+  );
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/80">
+      {children}
+    </span>
+  );
+}
+
 export default function InsightsPage() {
   const [gate, setGate] = useState<GateState>("loading");
   const [data, setData] = useState<InsightsCompare>(null);
@@ -121,66 +191,45 @@ export default function InsightsPage() {
     >
       {/* Background */}
       <div className="fixed inset-0 -z-10">
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(900px 500px at 50% 0%, rgba(255,255,255,0.10), transparent 60%), linear-gradient(180deg, #0B1634 0%, #07102A 55%, #061027 100%)",
-          }}
-        />
+        <div className="absolute inset-0" style={{ background: "var(--vf-bg)" }} />
+        <div className="pointer-events-none absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-[#A855F7]/20 blur-[120px]" />
       </div>
 
-      {/* Header */}
-      <header className="w-full bg-[#401268]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-1.5">
-          <Link href="/" className="flex items-center justify-center">
-            <Image
-              src="/brand/logo.svg"
-              alt="Ventfreely"
-              width={92}
-              height={24}
-              priority
-              className="opacity-95"
-            />
-          </Link>
-
-          <nav className="hidden sm:flex items-center gap-1 text-[12px] text-white/80">
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/chat">
-              Chat
-            </Link>
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/daily">
-              Daily
-            </Link>
-            <Link className="rounded-full px-3 py-1 hover:bg-white/10" href="/weekly">
-              Weekly
-            </Link>
-          </nav>
-        </div>
-      </header>
+      {/* ✅ Unified header */}
+      <AppTopHeader active="insights" />
 
       <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
         <section className="mx-auto max-w-xl text-center">
-          <h1
-            className="text-5xl font-semibold md:text-6xl"
-            style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
-          >
-            INSIGHTS
-          </h1>
+          <GlowCard>
+            <div className="px-6 py-10 md:px-8">
+              <Eyebrow>SOFT INSIGHTS</Eyebrow>
 
-          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/85">
-            A gentle comparison of this week vs last week.
-          </p>
+              <h1
+                className="mt-3 text-4xl font-semibold md:text-5xl"
+                style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
+              >
+                Weekly insights
+              </h1>
+
+              <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/85">
+                A gentle comparison of this week vs last week.
+              </p>
+
+              <div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">
+                <Pill>📊 comparison</Pill>
+                <Pill>🕊 calm tone</Pill>
+                <Pill>🧩 simple patterns</Pill>
+              </div>
+            </div>
+          </GlowCard>
 
           {gate === "loading" && (
-            <div className="mt-10 rounded-3xl border border-white/15 bg-white/5 p-6 text-left">
-              <p
-                className="text-[12px] text-white/60"
-                style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-              >
-                LOADING
-              </p>
-              <p className="mt-2 text-[14px] text-white/80">Loading your insights…</p>
-            </div>
+            <GlowCard className="mt-8">
+              <div className="p-5 text-left">
+                <Eyebrow>LOADING</Eyebrow>
+                <p className="mt-2 text-[14px] text-white/80">Loading your insights…</p>
+              </div>
+            </GlowCard>
           )}
 
           {gate === "unauthorized" && (
@@ -218,65 +267,75 @@ export default function InsightsPage() {
           )}
 
           {gate === "ok" && (
-            <div className="mt-10 text-left">
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
-                <p
-                  className="text-[12px] text-white/60"
-                  style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-                >
-                  WHAT CHANGED
-                </p>
-                <p className="mt-2 text-[14px] text-white/85">
-                  {note || "Your weekly comparison is ready."}
-                </p>
-              </div>
+            <div className="mt-8 text-left">
+              <GlowCard>
+                <div className="p-5">
+                  <Eyebrow>WHAT CHANGED</Eyebrow>
+                  <p className="mt-2 text-[14px] text-white/85">
+                    {note || "Your weekly comparison is ready."}
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Pill>
+                      ✅ {thisWeek?.completedDays ?? 0}/7 this week
+                    </Pill>
+                    <Pill>
+                      📅 {lastWeek?.completedDays ?? 0}/7 last week
+                    </Pill>
+                    <Pill>
+                      {trendArrow(thisWeek?.trend ?? "na")} {trendText(thisWeek?.trend ?? "na")}
+                    </Pill>
+                  </div>
+                </div>
+              </GlowCard>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <WeekCard
-                  title="THIS WEEK"
-                  range={fmtRange(thisWeek?.range)}
-                  completedDays={thisWeek?.completedDays ?? 0}
-                  topEmotion={thisWeek?.topEmotion ?? null}
-                  trend={thisWeek?.trend ?? "na"}
-                />
+                <GlowCard>
+                  <WeekCard
+                    title="THIS WEEK"
+                    range={fmtRange(thisWeek?.range)}
+                    completedDays={thisWeek?.completedDays ?? 0}
+                    topEmotion={thisWeek?.topEmotion ?? null}
+                    trend={thisWeek?.trend ?? "na"}
+                  />
+                </GlowCard>
 
-                <WeekCard
-                  title="LAST WEEK"
-                  range={fmtRange(lastWeek?.range)}
-                  completedDays={lastWeek?.completedDays ?? 0}
-                  topEmotion={lastWeek?.topEmotion ?? null}
-                  trend={lastWeek?.trend ?? "na"}
-                />
+                <GlowCard>
+                  <WeekCard
+                    title="LAST WEEK"
+                    range={fmtRange(lastWeek?.range)}
+                    completedDays={lastWeek?.completedDays ?? 0}
+                    topEmotion={lastWeek?.topEmotion ?? null}
+                    trend={lastWeek?.trend ?? "na"}
+                  />
+                </GlowCard>
               </div>
 
-              <div className="mt-4 rounded-3xl border border-white/15 bg-white/5 p-5">
-                <p
-                  className="text-[12px] text-white/60"
-                  style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-                >
-                  SOFT INSIGHTS
-                </p>
+              <GlowCard className="mt-4">
+                <div className="p-5">
+                  <Eyebrow>SOFT INSIGHTS</Eyebrow>
 
-                {insights.length ? (
-                  <ul className="mt-3 space-y-2 text-[13px] text-white/85">
-                    {insights.map((s, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <span className="mt-[6px] inline-block h-1.5 w-1.5 rounded-full bg-white/50" />
-                        <span className="leading-relaxed">{s}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-[13px] text-white/70">
-                    Do a few more days to unlock clearer patterns.
-                  </p>
-                )}
-              </div>
+                  {insights.length ? (
+                    <ul className="mt-3 space-y-2 text-[13px] text-white/85">
+                      {insights.map((s, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <span className="mt-[7px] inline-block h-1.5 w-1.5 rounded-full bg-white/50" />
+                          <span className="leading-relaxed">{s}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-[13px] text-white/70">
+                      Do a few more days to unlock clearer patterns.
+                    </p>
+                  )}
+                </div>
+              </GlowCard>
 
               <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Link
                   href="/daily"
-                  className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+                  className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
                   style={{
                     fontFamily: "var(--font-subheading)",
                     letterSpacing: "0.06em",
@@ -318,18 +377,13 @@ function WeekCard({
   range: string;
   completedDays: number;
   topEmotion: string | null;
-  trend: "up" | "flat" | "down" | "na";
+  trend: Trend;
 }) {
   return (
-    <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
+    <div className="p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p
-            className="text-[12px] text-white/60"
-            style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-          >
-            {title}
-          </p>
+          <Eyebrow>{title}</Eyebrow>
           <p className="mt-2 text-[12px] text-white/55">{range || "—"}</p>
         </div>
 
@@ -379,14 +433,9 @@ function SimpleCard({
   onPrimaryClick?: () => void;
 }) {
   return (
-    <div className="mt-10 text-left">
-      <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
-        <p
-          className="text-[12px] text-white/60"
-          style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.08em" }}
-        >
-          {title}
-        </p>
+    <GlowCard className="mt-8">
+      <div className="p-5 text-left">
+        <Eyebrow>{title}</Eyebrow>
         <p className="mt-2 text-[14px] text-white/85">{text}</p>
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -394,7 +443,7 @@ function SimpleCard({
             <button
               type="button"
               onClick={onPrimaryClick}
-              className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+              className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
               style={{
                 fontFamily: "var(--font-subheading)",
                 letterSpacing: "0.06em",
@@ -406,7 +455,7 @@ function SimpleCard({
           ) : (
             <Link
               href={primaryHref}
-              className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+              className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
               style={{
                 fontFamily: "var(--font-subheading)",
                 letterSpacing: "0.06em",
@@ -432,6 +481,6 @@ function SimpleCard({
           ) : null}
         </div>
       </div>
-    </div>
+    </GlowCard>
   );
 }

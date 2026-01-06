@@ -3,8 +3,8 @@
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Montserrat, Oswald, Barlow_Condensed } from "next/font/google";
+import { AppTopHeader } from "@/app/components/AppTopHeader";
 
 type Answer = 1 | 2 | 3 | 4 | 5;
 
@@ -94,10 +94,78 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-export default function TestPage() {
-  const [answers, setAnswers] = useState<(Answer | null)[]>(
-    Array(QUESTIONS.length).fill(null)
+/**
+ * GlowCard – sama “ere lilla outline + glow outside” vibe nagu Home/Daily/Weekly.
+ */
+const PURPLE = "168,85,247"; // #A855F7
+const LINE_ALPHA = 0.85;
+const GLOW_ALPHA = 0.35;
+const SOFT_GLOW_ALPHA = 0.18;
+
+function GlowCard({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`relative ${className}`}>
+      <div
+        className="pointer-events-none absolute -inset-[10px] rounded-[2rem] blur-2xl"
+        style={{
+          background: `radial-gradient(closest-side, rgba(${PURPLE},${SOFT_GLOW_ALPHA}), transparent 62%)`,
+          opacity: 1,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 rounded-[2rem]"
+        style={{
+          boxShadow: `inset 0 0 0 1.5px rgba(${PURPLE},${LINE_ALPHA})`,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute -inset-[2px] rounded-[2rem]"
+        style={{
+          boxShadow: `0 0 18px rgba(${PURPLE},${GLOW_ALPHA})`,
+        }}
+      />
+
+      <div className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur">
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[2rem]"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(64,18,104,0.22) 0%, rgba(11,22,52,0.00) 50%, rgba(99,102,241,0.10) 100%)",
+          }}
+        />
+        <div className="relative">{children}</div>
+      </div>
+    </div>
   );
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="text-[12px] text-white/60"
+      style={{ fontFamily: "var(--font-subheading)", letterSpacing: "0.10em" }}
+    >
+      {children}
+    </p>
+  );
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/80">
+      {children}
+    </span>
+  );
+}
+
+export default function TestPage() {
+  const [answers, setAnswers] = useState<(Answer | null)[]>(Array(QUESTIONS.length).fill(null));
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
 
@@ -128,30 +196,23 @@ export default function TestPage() {
   }, [progressTone]);
 
   const handleSelect = (qIndex: number, value: Answer) => {
-    // Update answers
     const next = [...answers];
     next[qIndex] = value;
     setAnswers(next);
 
-    // Update progress color based on last choice
     setProgressTone(value);
 
-    // Smooth scroll to next question (or submit button)
     requestAnimationFrame(() => {
       const nextIndex = qIndex + 1;
 
       if (nextIndex < QUESTIONS.length) {
-        // pulse next question
         setFocusIndex(nextIndex);
         window.setTimeout(() => setFocusIndex(null), 650);
 
         const el = questionRefs.current[nextIndex];
         el?.scrollIntoView({ behavior: "smooth", block: "start" });
       } else {
-        submitRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
+        submitRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     });
   };
@@ -191,248 +252,222 @@ export default function TestPage() {
 
   return (
     <main
-      className={[
-        "min-h-screen w-full",
-        bodyFont.variable,
-        subheadingFont.variable,
-        headingFont.variable,
-      ].join(" ")}
+      className={["min-h-screen w-full", bodyFont.variable, subheadingFont.variable, headingFont.variable].join(" ")}
       style={{ fontFamily: "var(--font-body)", color: "white" }}
     >
       {/* Background */}
       <div className="fixed inset-0 -z-10">
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(900px 500px at 50% 0%, rgba(255,255,255,0.08), transparent 60%), linear-gradient(180deg, #0B1634 0%, #07102A 55%, #061027 100%)",
-          }}
-        />
+        <div className="absolute inset-0" style={{ background: "var(--vf-bg)" }} />
+        <div className="pointer-events-none absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-[#A855F7]/20 blur-[120px]" />
       </div>
 
-      {/* Header (smaller) */}
-      <header className="w-full bg-[#401268]">
-        <div className="mx-auto flex max-w-5xl items-center justify-center px-4 py-2.5">
-          <Link href="/" className="flex items-center justify-center">
-            <Image
-              src="/brand/logo.svg"
-              alt="Ventfreely"
-              width={116}
-              height={32}
-              priority
-              className="opacity-95"
-            />
-          </Link>
-        </div>
-      </header>
+      {/* ✅ Unified header */}
+      <AppTopHeader active="test" />
 
       {/* Content */}
       <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
         <section className="mx-auto max-w-xl text-center">
-          <h1
-            className="text-5xl font-semibold md:text-6xl"
-            style={{
-              fontFamily: "var(--font-heading)",
-              letterSpacing: "0.02em",
-            }}
-          >
-            TAKE MENTAL HEALTH TEST
-          </h1>
+          <GlowCard>
+            <div className="px-6 py-10 md:px-8">
+              <div className="flex flex-col items-center gap-2">
+                <Eyebrow>FAST CHECK-IN</Eyebrow>
+                <h1
+                  className="text-4xl font-semibold md:text-5xl"
+                  style={{ fontFamily: "var(--font-heading)", letterSpacing: "0.02em" }}
+                >
+                  Quick mental check
+                </h1>
+                <p className="mx-auto mt-1 max-w-md text-[14px] leading-relaxed text-white/80">
+                  Answer a few simple questions. No diagnosis — just clarity.
+                </p>
 
-          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/85">
-            Answer a few quick questions so we understand what you're going
-            through right now.
-          </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <Pill>🕊 gentle tone</Pill>
+                  <Pill>⏱ ~1 minute</Pill>
+                  <Pill>🙈 private</Pill>
+                </div>
+              </div>
 
-          {/* Progress */}
-          <div className="mx-auto mt-6 max-w-xl">
-            <div className="flex items-center justify-between text-[12px] text-white/70">
-              <span style={{ fontFamily: "var(--font-subheading)" }}>
-                Progress
-              </span>
-              <span className="text-white/70">
-                {answeredCount}/{QUESTIONS.length} ({progressPercent}%)
-              </span>
-            </div>
+              {/* Progress */}
+              <div className="mx-auto mt-7 max-w-xl text-left">
+                <div className="flex items-center justify-between text-[12px] text-white/70">
+                  <span style={{ fontFamily: "var(--font-subheading)" }}>Progress</span>
+                  <span className="text-white/70">
+                    {answeredCount}/{QUESTIONS.length} ({progressPercent}%)
+                  </span>
+                </div>
 
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className={[
-                  "h-full rounded-full transition-all duration-500",
-                  progressClass,
-                ].join(" ")}
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={["h-full rounded-full transition-all duration-500", progressClass].join(" ")}
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
 
-            <p className="mt-2 text-[12px] text-white/60">{progressHint}</p>
-          </div>
+                <p className="mt-2 text-[12px] text-white/60">{progressHint}</p>
+              </div>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-7 text-left">
-            {QUESTIONS.map((q, index) => {
-              const isFocus = focusIndex === index;
+              <form onSubmit={handleSubmit} className="mt-8 space-y-7 text-left">
+                {QUESTIONS.map((q, index) => {
+                  const isFocus = focusIndex === index;
 
-              return (
-                <div
-                  key={index}
-                  ref={(el) => {
-                    questionRefs.current[index] = el;
-                  }}
+                  return (
+                    <GlowCard key={index} className="!rounded-[2rem]">
+                      <div
+                        ref={(el) => {
+                          questionRefs.current[index] = el;
+                        }}
+                        className={[
+                          "p-4 md:p-5 scroll-mt-24 transition",
+                          isFocus
+                            ? "ring-1 ring-white/20 shadow-[0_18px_50px_rgba(255,255,255,0.08)] animate-[pulse_0.7s_ease-in-out_1]"
+                            : "",
+                        ].join(" ")}
+                      >
+                        <p className="text-[14px] text-white/90">
+                          <span className="mr-2 inline-block text-white/60" style={{ fontFamily: "var(--font-subheading)" }}>
+                            {index + 1}.
+                          </span>
+                          {q}
+                        </p>
+
+                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-5">
+                          {CHOICES.map(({ value, emoji, label, sub, accent, glow }) => {
+                            const selected = answers[index] === value;
+                            const depth = clamp(8 + value * 2, 10, 18);
+
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => handleSelect(index, value)}
+                                aria-pressed={selected}
+                                className={[
+                                  "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
+                                  "focus:outline-none focus:ring-2 focus:ring-white/30",
+                                  "active:scale-[0.99]",
+                                  selected
+                                    ? `border-white/50 bg-white/10 ${glow}`
+                                    : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
+                                ].join(" ")}
+                                style={{
+                                  fontFamily: "var(--font-subheading)",
+                                  boxShadow: selected ? undefined : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
+                                }}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-2xl leading-none">{emoji}</span>
+                                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                                    {value}
+                                  </span>
+                                </div>
+
+                                <div className="mt-2">
+                                  <div className="text-[13px] font-semibold text-white">{label}</div>
+                                  <div className="text-[11px] text-white/60">{sub}</div>
+                                </div>
+
+                                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                                  <div
+                                    className={[
+                                      "h-full rounded-full transition-all duration-300",
+                                      accent,
+                                      selected ? "opacity-100" : "opacity-70",
+                                    ].join(" ")}
+                                    style={{ width: `${value * 20}%` }}
+                                  />
+                                </div>
+
+                                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center pb-2 opacity-0 transition group-hover:opacity-100 sm:hidden">
+                                  <span className="text-[10px] text-white/60">tap to select</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div className="mt-4 h-px bg-white/10" />
+                      </div>
+                    </GlowCard>
+                  );
+                })}
+
+                {!allAnswered && (
+                  <div className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] text-white/90">
+                    Please answer all questions before continuing.
+                  </div>
+                )}
+
+                {/* Main CTA */}
+                <button
+                  ref={submitRef}
+                  type="submit"
+                  disabled={!allAnswered}
                   className={[
-                    "space-y-3 scroll-mt-24 rounded-3xl p-3 transition",
-                    isFocus
-                      ? "bg-white/10 ring-1 ring-white/25 shadow-[0_18px_50px_rgba(255,255,255,0.08)] animate-[pulse_0.7s_ease-in-out_1]"
-                      : "",
+                    "mt-2 inline-flex w-full items-center justify-center rounded-full px-6 py-4",
+                    "bg-white text-[var(--vf-ink)] transition",
+                    "hover:brightness-95 active:scale-[0.99]",
+                    "disabled:opacity-60 disabled:cursor-not-allowed",
                   ].join(" ")}
                   style={{
-                    // keep it subtle on mobile
-                    marginLeft: isFocus ? "-0.25rem" : 0,
-                    marginRight: isFocus ? "-0.25rem" : 0,
+                    fontFamily: "var(--font-subheading)",
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
                   }}
                 >
-                  <p className="text-[14px] text-white/90">
-                    <span
-                      className="mr-2 inline-block text-white/70"
-                      style={{ fontFamily: "var(--font-subheading)" }}
-                    >
-                      {index + 1}.
-                    </span>
-                    {q}
+                  See results
+                </button>
+              </form>
+
+              {/* Result */}
+              {submitted && (
+                <div className="mx-auto mt-10 max-w-xl text-center">
+                  <p className="text-[12px] text-white/60">
+                    Your score: <strong className="text-white">{score}</strong> / {maxScore} ({percent}%)
                   </p>
 
-                  {/* Fun + clear choices */}
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
-                    {CHOICES.map(({ value, emoji, label, sub, accent, glow }) => {
-                      const selected = answers[index] === value;
+                  <h2
+                    className="mt-3 text-4xl font-semibold md:text-5xl"
+                    style={{ fontFamily: "var(--font-heading)" }}
+                  >
+                    {summaryTitle}
+                  </h2>
 
-                      // Slightly vary “depth” by intensity for fun
-                      const depth = clamp(8 + value * 2, 10, 18);
+                  <p className="mx-auto mt-3 max-w-lg text-[15px] leading-relaxed text-white/85">{summaryText}</p>
 
-                      return (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => handleSelect(index, value)}
-                          aria-pressed={selected}
-                          className={[
-                            "group relative overflow-hidden rounded-2xl border p-3 text-left transition-all",
-                            "focus:outline-none focus:ring-2 focus:ring-white/30",
-                            "active:scale-[0.99]",
-                            selected
-                              ? `border-white/70 bg-white/10 ${glow}`
-                              : "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/30",
-                          ].join(" ")}
-                          style={{
-                            fontFamily: "var(--font-subheading)",
-                            boxShadow: selected
-                              ? undefined
-                              : `0 ${depth}px ${depth * 2}px rgba(0,0,0,0.18)`,
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-2xl leading-none">{emoji}</span>
-                            <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                              {value}
-                            </span>
-                          </div>
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+                    <Link
+                      href="/chat"
+                      className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[var(--vf-ink)] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
+                      style={{
+                        fontFamily: "var(--font-subheading)",
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Continue to chat
+                    </Link>
 
-                          <div className="mt-2">
-                            <div className="text-[13px] font-semibold text-white">
-                              {label}
-                            </div>
-                            <div className="text-[11px] text-white/60">{sub}</div>
-                          </div>
-
-                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                            <div
-                              className={[
-                                "h-full rounded-full transition-all duration-300",
-                                accent,
-                                selected ? "opacity-100" : "opacity-70",
-                              ].join(" ")}
-                              style={{ width: `${value * 20}%` }}
-                            />
-                          </div>
-
-                          {/* ✅ Only show on mobile */}
-                          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center pb-2 opacity-0 transition group-hover:opacity-100 sm:hidden">
-                            <span className="text-[10px] text-white/60">
-                              tap to select
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
+                    <Link
+                      href="/daily"
+                      className="inline-flex w-full items-center justify-center rounded-full border border-white/20 bg-white/10 px-6 py-4 text-white transition hover:bg-white/15 active:scale-[0.99] sm:w-auto"
+                      style={{
+                        fontFamily: "var(--font-subheading)",
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Try Daily
+                    </Link>
                   </div>
 
-                  <div className="h-px bg-white/10" />
+                  <p className="mt-4 text-[11px] text-white/50">
+                    This check-in is not a diagnosis — it’s a quick reflection tool.
+                  </p>
                 </div>
-              );
-            })}
-
-            {!allAnswered && (
-              <div className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] text-white/90">
-                Please answer all questions before continuing.
-              </div>
-            )}
-
-            {/* Main CTA */}
-            <button
-              ref={submitRef}
-              type="submit"
-              disabled={!allAnswered}
-              className={[
-                "mt-2 inline-flex w-full items-center justify-center rounded-full px-6 py-4",
-                "bg-white text-[#0B1634] transition",
-                "hover:brightness-95 active:scale-[0.99]",
-                "disabled:opacity-60 disabled:cursor-not-allowed",
-              ].join(" ")}
-              style={{
-                fontFamily: "var(--font-subheading)",
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-              }}
-            >
-              See results
-            </button>
-          </form>
-
-          {/* Result */}
-          {submitted && (
-            <div className="mx-auto mt-10 max-w-xl text-center">
-              <p className="text-[12px] text-white/60">
-                Your score: <strong className="text-white">{score}</strong> /{" "}
-                {maxScore} ({percent}%)
-              </p>
-
-              <h2
-                className="mt-3 text-4xl font-semibold md:text-5xl"
-                style={{ fontFamily: "var(--font-heading)" }}
-              >
-                {summaryTitle}
-              </h2>
-
-              <p className="mx-auto mt-3 max-w-lg text-[15px] leading-relaxed text-white/85">
-                {summaryText}
-              </p>
-
-              <Link
-                href="/chat"
-                className="mx-auto mt-6 inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-[#0B1634] transition hover:brightness-95 active:scale-[0.99] sm:w-auto"
-                style={{
-                  fontFamily: "var(--font-subheading)",
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Continue to chat
-              </Link>
-
-              <p className="mt-4 text-[11px] text-white/50">
-                This check-in is not a diagnosis — it's a quick reflection tool.
-              </p>
+              )}
             </div>
-          )}
+          </GlowCard>
         </section>
       </div>
     </main>
