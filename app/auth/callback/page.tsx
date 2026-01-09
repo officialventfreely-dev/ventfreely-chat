@@ -1,45 +1,53 @@
-// app/auth/callback/page.tsx
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function getFragment() {
-  // Example hash: #access_token=...&refresh_token=...&type=magiclink
   const hash = typeof window !== "undefined" ? window.location.hash : "";
   return hash.startsWith("#") ? hash.slice(1) : hash;
 }
 
-function getQueryParam(name: string) {
+function getParam(name: string) {
   if (typeof window === "undefined") return null;
-  const url = new URL(window.location.href);
-  return url.searchParams.get(name);
+  return new URL(window.location.href).searchParams.get(name);
 }
 
 export default function AuthCallbackBridge() {
-  useEffect(() => {
+  const [target, setTarget] = useState<string | null>(null);
+
+  const computed = useMemo(() => {
     const fragment = getFragment();
 
-    // If no tokens, just fall back to app home
-    // (this can happen if link opened weirdly)
     const hasTokens =
       fragment.includes("access_token=") && fragment.includes("refresh_token=");
 
-    // 1) Choose where to deep-link:
-    // - If "app" param exists, use it (lets you test Expo Go explicitly)
-    // - Otherwise default to production scheme (ventfreely://)
-    //
-    // You can test Expo Go by opening:
-    // https://chat.ventfreely.com/auth/callback?app=exp://192.168.1.135:8081/--/auth-callback
-    const appOverride = getQueryParam("app");
-    const deepLinkBase = appOverride || "ventfreely://auth-callback";
+    // If the app param is present, use it (Expo Go: exp://.../--/auth-callback)
+    // Otherwise default to production scheme (standalone build)
+    const appParam = getParam("app");
+    const deepLinkBase = appParam || "ventfreely://auth-callback";
 
-    const target = hasTokens
-      ? `${deepLinkBase}#${fragment}`
-      : `${deepLinkBase}`;
-
-    // 2) Redirect to app (or Expo Go) immediately
-    window.location.replace(target);
+    const url = hasTokens ? `${deepLinkBase}#${fragment}` : deepLinkBase;
+    return { url, hasTokens };
   }, []);
+
+  useEffect(() => {
+    setTarget(computed.url);
+
+    // Try immediate redirect
+    const t1 = setTimeout(() => {
+      window.location.href = computed.url;
+    }, 50);
+
+    // Try again shortly after (some browsers block the first attempt)
+    const t2 = setTimeout(() => {
+      window.location.href = computed.url;
+    }, 600);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [computed.url]);
 
   return (
     <main
@@ -54,8 +62,28 @@ export default function AuthCallbackBridge() {
     >
       <div style={{ maxWidth: 520, textAlign: "center" }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>Opening Ventfreely…</h1>
-        <p style={{ marginTop: 10, opacity: 0.7 }}>
-          If nothing happens, open the Ventfreely app and try the magic link again.
+        <p style={{ marginTop: 10, opacity: 0.75 }}>
+          If the app doesn’t open automatically, tap the button below.
+        </p>
+
+        <a
+          href={target ?? "#"}
+          style={{
+            display: "inline-block",
+            marginTop: 14,
+            padding: "12px 16px",
+            borderRadius: 12,
+            textDecoration: "none",
+            border: "1px solid rgba(64,18,104,0.18)",
+            fontWeight: 700,
+          }}
+        >
+          Open Ventfreely
+        </a>
+
+        <p style={{ marginTop: 14, opacity: 0.6, fontSize: 13 }}>
+          (Dev note: in Expo Go, the link must be exp://…/--/auth-callback. In production builds it will be
+          ventfreely://auth-callback.)
         </p>
       </div>
     </main>
