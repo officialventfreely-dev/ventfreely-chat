@@ -1,84 +1,62 @@
+// app/auth/callback/page.tsx
 "use client";
 
-export const dynamic = "force-dynamic";
+import { useEffect } from "react";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabaseBrowser } from "../../../lib/supabaseBrowser";
+function getFragment() {
+  // Example hash: #access_token=...&refresh_token=...&type=magiclink
+  const hash = typeof window !== "undefined" ? window.location.hash : "";
+  return hash.startsWith("#") ? hash.slice(1) : hash;
+}
 
-export default function AuthCallbackPage() {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+function getQueryParam(name: string) {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  return url.searchParams.get(name);
+}
 
+export default function AuthCallbackBridge() {
   useEffect(() => {
-    async function handleAuthCallback() {
-      try {
-        // ✅ read next from URL safely (no useSearchParams -> no prerender crash)
-        const params = new URLSearchParams(window.location.search);
-        const next = params.get("next");
-        const nextPath = next && next.startsWith("/") ? next : "/chat";
+    const fragment = getFragment();
 
-        // 🔐 Finish OAuth session
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabaseBrowser.auth.getSession();
+    // If no tokens, just fall back to app home
+    // (this can happen if link opened weirdly)
+    const hasTokens =
+      fragment.includes("access_token=") && fragment.includes("refresh_token=");
 
-        if (sessionError || !session) {
-          setError(
-            sessionError?.message ??
-              "We couldn’t complete the login. Please try again."
-          );
-          return;
-        }
+    // 1) Choose where to deep-link:
+    // - If "app" param exists, use it (lets you test Expo Go explicitly)
+    // - Otherwise default to production scheme (ventfreely://)
+    //
+    // You can test Expo Go by opening:
+    // https://chat.ventfreely.com/auth/callback?app=exp://192.168.1.135:8081/--/auth-callback
+    const appOverride = getQueryParam("app");
+    const deepLinkBase = appOverride || "ventfreely://auth-callback";
 
-        router.replace(nextPath);
-      } catch (err) {
-        console.error("Auth callback error:", err);
-        setError("Something went wrong during login.");
-      }
-    }
+    const target = hasTokens
+      ? `${deepLinkBase}#${fragment}`
+      : `${deepLinkBase}`;
 
-    handleAuthCallback();
-  }, [router]);
+    // 2) Redirect to app (or Expo Go) immediately
+    window.location.replace(target);
+  }, []);
 
   return (
-    <main className="min-h-screen w-full bg-[#FAF8FF] flex items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-3xl bg-white/90 backdrop-blur-md border border-violet-200 shadow-xl p-6 text-center">
-        {!error ? (
-          <>
-            <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-[#401268] shadow-sm shadow-[#401268]/25">
-              <span className="text-xs font-semibold text-white">VF</span>
-            </div>
-
-            <h1 className="text-base font-semibold text-[#2A1740]">
-              Signing you in…
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Just a moment while we finish setting things up.
-            </p>
-
-            <div className="mt-4 flex justify-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-[#401268] animate-pulse" />
-              <span className="h-2 w-2 rounded-full bg-[#A268F5] animate-pulse [animation-delay:120ms]" />
-              <span className="h-2 w-2 rounded-full bg-[#F5A5E0] animate-pulse [animation-delay:240ms]" />
-            </div>
-          </>
-        ) : (
-          <>
-            <h1 className="text-base font-semibold text-red-600">
-              Login failed
-            </h1>
-            <p className="mt-2 text-sm text-slate-700">{error}</p>
-
-            <button
-              onClick={() => router.replace("/login?next=/chat")}
-              className="mt-4 rounded-2xl bg-[#401268] px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition"
-            >
-              Back to login
-            </button>
-          </>
-        )}
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        fontFamily:
+          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+        padding: 24,
+      }}
+    >
+      <div style={{ maxWidth: 520, textAlign: "center" }}>
+        <h1 style={{ margin: 0, fontSize: 22 }}>Opening Ventfreely…</h1>
+        <p style={{ marginTop: 10, opacity: 0.7 }}>
+          If nothing happens, open the Ventfreely app and try the magic link again.
+        </p>
       </div>
     </main>
   );
