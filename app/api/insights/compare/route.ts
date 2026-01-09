@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer";
-import { ensureDailyAccess } from "@/lib/dailyAccess";
+// app/api/insights/compare/route.ts
+
+import { NextRequest, NextResponse } from "next/server";
+import { getApiSupabase } from "@/lib/apiAuth";
+import { ensureTrialAndCheckAccess } from "@/lib/access";
 import { getTodayEE } from "@/lib/getTodayEE";
 
 type Trend = "up" | "flat" | "down" | "na";
@@ -13,10 +15,6 @@ type WeekSummary = {
   series: Array<{ date: string; score: number; emotion: string; energy: string }>;
   insights: string[];
 };
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
 
 function addDaysUTC(yyyyMmDd: string, days: number) {
   const d = new Date(yyyyMmDd + "T00:00:00Z");
@@ -46,8 +44,14 @@ function calcTrend(series: Array<{ score: number }>): Trend {
 
 function topEmotion(series: Array<{ emotion: string }>) {
   if (!series.length) return null;
+
   const counts = new Map<string, number>();
-  for (const s of series) counts.set(s.emotion, (counts.get(s.emotion) ?? 0) + 1);
+  for (const s of series) {
+    const e = (s.emotion || "").trim();
+    if (!e) continue;
+    counts.set(e, (counts.get(e) ?? 0) + 1);
+  }
+
   let best: string | null = null;
   let bestN = 0;
   for (const [k, v] of counts.entries()) {
@@ -97,6 +101,21 @@ function buildSoftInsights(summary: {
   return out.slice(0, 4);
 }
 
+function isAllowedAccess(access: unknown): boolean {
+  const a = access as any;
+
+  if (typeof a?.ok === "boolean") return a.ok;
+  if (typeof a?.allowed === "boolean") return a.allowed;
+  if (typeof a?.hasAccess === "boolean") return a.hasAccess;
+  if (typeof a?.premium === "boolean") return a.premium;
+  if (typeof a?.isPremium === "boolean") return a.isPremium;
+
+  const s = a?.access ?? a?.status;
+  if (s === "premium" || s === "trial" || s === "active" || s === "trialing") return true;
+
+  return false;
+}
+
 async function fetchWeek(
   supabase: any,
   userId: string,
@@ -123,7 +142,6 @@ async function fetchWeek(
   const completedDays = series.length;
   const trend = calcTrend(series);
   const top = topEmotion(series);
-
   const insights = buildSoftInsights({ completedDays, topEmotion: top, trend });
 
   return {
@@ -136,21 +154,18 @@ async function fetchWeek(
   };
 }
 
-export async function GET() {
-  const supabase = await createClient();
+export async function GET(req: NextRequest) {
+  // ✅ app+web auth (Bearer + cookie)
+  const { userId, supabase } = await getApiSupabase(req);
 
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
-  if (userErr || !user) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await ensureDailyAccess(user.id);
-  if (!access?.hasAccess) {
-    return NextResponse.json({ error: "Payment required" }, { status: 402 });
+  // ✅ ühtne Premium/Trial gate
+  const access = await ensureTrialAndCheckAccess(supabase as any, userId);
+  if (!isAllowedAccess(access)) {
+    return NextResponse.json({ error: "Premium required" }, { status: 402 });
   }
 
   // This week ends today (EE date string)
@@ -162,8 +177,8 @@ export async function GET() {
   const lastRange = makeRangeFromEnd(lastEnd);
 
   try {
-    const thisWeek = await fetchWeek(supabase, user.id, thisRange);
-    const lastWeek = await fetchWeek(supabase, user.id, lastRange);
+    const thisWeek = await fetchWeek(supabase, userId, thisRange);
+    const lastWeek = await fetchWeek(supabase, userId, lastRange);
 
     // Save snapshot for THIS week into weekly_reports (upsert by PK user_id + week_start)
     const weekStart = thisWeek.range.start;
@@ -171,7 +186,7 @@ export async function GET() {
 
     await supabase.from("weekly_reports").upsert(
       {
-        user_id: user.id,
+        user_id: userId,
         week_start: weekStart,
         week_end: weekEnd,
         completed_days: thisWeek.completedDays,
@@ -185,7 +200,6 @@ export async function GET() {
 
     const deltaDays = thisWeek.completedDays - lastWeek.completedDays;
 
-    // very light delta note
     const changeNote =
       deltaDays === 0
         ? "Same number of check-ins as last week."

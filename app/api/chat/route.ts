@@ -1,12 +1,9 @@
-// FILE: app/api/chat/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { supabaseServer } from "@/lib/supabaseServer";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
+import { getApiSupabase } from "@/lib/apiAuth";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 const MODEL = "gpt-4.1-mini";
 const TEMPERATURE = 0.7;
@@ -14,16 +11,8 @@ const MAX_TOKENS = 400;
 const TOP_P = 1;
 const PRESENCE_PENALTY = 0;
 const FREQUENCY_PENALTY = 0;
-
 const SUMMARY_MAX_TOKENS = 200;
 
-/**
- * ETAPP 4.1 – User memory (light, safe)
- * ETAPP 4.4.4 – Memory-aware polish:
- * - Adds "confidence" so the assistant doesn't sound certain
- * - Uses patterns only when helpful, never as facts
- * - Never mentions "memory" / "user_memory" / "patterns database" explicitly
- */
 type UserMemoryRow = {
   dominant_emotions: string[] | null;
   recurring_themes: string[] | null;
@@ -46,16 +35,15 @@ function computeMemoryConfidence(memory: UserMemoryRow | null) {
   if (!memory) return { level: "none" as const, score: 0 };
 
   let score = 0;
-
   const emotions = memory.dominant_emotions?.length ?? 0;
   const themes = memory.recurring_themes?.length ?? 0;
+
   if (emotions >= 1) score += 35;
   if (emotions >= 2) score += 10;
   if (themes >= 1) score += 25;
   if (memory.preferred_tone) score += 10;
   if (memory.energy_pattern) score += 10;
 
-  // recency penalty
   const updatedMs = safeIsoToMs(memory.updated_at ?? null);
   if (updatedMs) {
     const days = Math.floor((Date.now() - updatedMs) / (1000 * 60 * 60 * 24));
@@ -74,29 +62,14 @@ function computeMemoryConfidence(memory: UserMemoryRow | null) {
 
 function buildMemoryBlock(memory: UserMemoryRow | null) {
   if (!memory) return "";
-
   const { level, score } = computeMemoryConfidence(memory);
-
-  // If confidence is extremely low, don’t inject anything at all.
   if (score < 20) return "";
 
   const lines: string[] = [];
-
-  if (memory.dominant_emotions?.length) {
-    lines.push(`- Emotions that sometimes appear: ${memory.dominant_emotions.join(", ")}`);
-  }
-
-  if (memory.recurring_themes?.length) {
-    lines.push(`- Themes that sometimes come up: ${memory.recurring_themes.join(", ")}`);
-  }
-
-  if (memory.preferred_tone) {
-    lines.push(`- Tone preference: ${memory.preferred_tone}`);
-  }
-
-  if (memory.energy_pattern) {
-    lines.push(`- Energy tendency: ${memory.energy_pattern}`);
-  }
+  if (memory.dominant_emotions?.length) lines.push(`- Emotions that sometimes appear: ${memory.dominant_emotions.join(", ")}`);
+  if (memory.recurring_themes?.length) lines.push(`- Themes that sometimes come up: ${memory.recurring_themes.join(", ")}`);
+  if (memory.preferred_tone) lines.push(`- Tone preference: ${memory.preferred_tone}`);
+  if (memory.energy_pattern) lines.push(`- Energy tendency: ${memory.energy_pattern}`);
 
   if (!lines.length) return "";
 
@@ -118,55 +91,33 @@ How to use this:
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-
-    const messages = body?.messages as
-      | { role: "user" | "assistant"; content: string }[]
-      | undefined;
+    const messages = body?.messages as { role: "user" | "assistant"; content: string }[] | undefined;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: "No messages provided" }, { status: 400 });
     }
 
-    // ✅ SECURE: user comes from Supabase session cookie (not from body)
-    const supabase = await supabaseServer();
+    // ✅ 1) Auth (Bearer or cookie) + correct supabase client
+    const { userId, supabase } = await getApiSupabase(req);
 
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const userId = user.id;
-
-    // ✅ ETAPP 4.1: fetch user_memory (RLS protected)
-    let memory: UserMemoryRow | null = null;
-    try {
-      const { data, error } = await supabase
-        .from("user_memory")
-        .select(
-          "dominant_emotions, recurring_themes, preferred_tone, energy_pattern, updated_at"
-        )
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (!error) memory = (data as UserMemoryRow) ?? null;
-    } catch (e) {
-      console.error("Failed to fetch user_memory:", e);
-    }
-
-    // ✅ ETAPP 2.3: access check
-    const access = await ensureTrialAndCheckAccess(supabase, userId);
+    // ✅ 2) Premium gate
+    const access = await ensureTrialAndCheckAccess(supabase as any, userId);
     if (!access.hasAccess) {
       return NextResponse.json({ error: "PAYWALL", access }, { status: 402 });
     }
 
-    const lastUserMessage = [...messages]
-      .reverse()
-      .find((m) => m.role === "user")?.content;
+    // ✅ 3) Read user_memory (RLS)
+    let memory: UserMemoryRow | null = null;
+    try {
+      const { data, error } = await (supabase as any)
+        .from("user_memory")
+        .select("dominant_emotions, recurring_themes, preferred_tone, energy_pattern, updated_at")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!error) memory = (data as UserMemoryRow) ?? null;
+    } catch {}
 
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content;
     const memoryBlock = buildMemoryBlock(memory);
 
     const systemPrompt = `
@@ -205,14 +156,14 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       max_tokens: MAX_TOKENS,
       top_p: TOP_P,
       presence_penalty: PRESENCE_PENALTY,
-      frequency_penalty: FREQUENCY_PENALTY,
-    });
+      frequency_penALTY: FREQUENCY_PENALTY as any,
+    } as any);
 
     const reply =
       completion.choices[0]?.message?.content ??
       "I’m here with you. We can take it one small step at a time.";
 
-    // ✅ Save memory (summary + last 2 msg) using session client
+    // Save conversation memory
     if (lastUserMessage) {
       try {
         let summary: string | null = null;
@@ -238,9 +189,7 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
           summary = summaryCompletion.choices[0]?.message?.content?.trim() || null;
         }
 
-        const lastAssistantMessage = reply;
-
-        const { data: existing, error: fetchError } = await supabase
+        const { data: existing } = await (supabase as any)
           .from("conversations")
           .select("id")
           .eq("user_id", userId)
@@ -248,51 +197,38 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
           .order("created_at", { ascending: false })
           .limit(1);
 
-        if (fetchError) {
-          console.error("Error fetching existing conversation:", fetchError);
-        } else if (existing && existing.length > 0) {
+        if (existing && existing.length > 0) {
           const convId = existing[0].id;
 
           const updatePayload: Record<string, any> = {
             last_user_message: lastUserMessage,
-            last_assistant_message: lastAssistantMessage,
+            last_assistant_message: reply,
             updated_at: new Date().toISOString(),
           };
-
           if (summary) updatePayload.summary = summary;
 
-          const { error: updateError } = await supabase
-            .from("conversations")
-            .update(updatePayload)
-            .eq("id", convId);
-
-          if (updateError) {
-            console.error("Error updating conversation:", updateError);
-          }
+          await (supabase as any).from("conversations").update(updatePayload).eq("id", convId);
         } else {
           const insertPayload: Record<string, any> = {
             user_id: userId,
             last_user_message: lastUserMessage,
-            last_assistant_message: lastAssistantMessage,
+            last_assistant_message: reply,
           };
-
           if (summary) insertPayload.summary = summary;
 
-          const { error: insertError } = await supabase
-            .from("conversations")
-            .insert(insertPayload);
-
-          if (insertError) {
-            console.error("Error inserting conversation:", insertError);
-          }
+          await (supabase as any).from("conversations").insert(insertPayload);
         }
-      } catch (memoryErr) {
-        console.error("Error while updating memory:", memoryErr);
+      } catch (e) {
+        console.error("Error while updating memory:", e);
       }
     }
 
     return NextResponse.json({ reply });
-  } catch (err) {
+  } catch (err: any) {
+    // map auth error thrown by getApiSupabase
+    if (err?.status === 401) {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
     console.error("Error in /api/chat:", err);
     return NextResponse.json({ error: "Failed to generate reply" }, { status: 500 });
   }

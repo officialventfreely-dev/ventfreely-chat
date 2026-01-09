@@ -1,9 +1,8 @@
-// FILE: lib/apiAuth.ts
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type User } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
-import { supabaseServer } from "@/lib/supabaseServer";
+import { supabaseServer } from "./supabaseServer";
 
-export function getBearerToken(req: NextRequest): string | null {
+function getBearerToken(req: NextRequest): string | null {
   const h = req.headers.get("authorization") || req.headers.get("Authorization");
   if (!h) return null;
   const m = h.match(/^Bearer\s+(.+)$/i);
@@ -24,42 +23,26 @@ function getSupabaseAnonKey(): string {
   return key;
 }
 
-export async function getApiSupabase(req: NextRequest): Promise<{
-  userId: string;
-  user: { id: string; email: string | null };
-  supabase: SupabaseClient;
-}> {
-  const bearer = getBearerToken(req);
+export type AuthedUserResult =
+  | { ok: true; user: User; mode: "bearer" | "cookie" }
+  | { ok: false; status: 401; error: "UNAUTHORIZED" };
 
-  // ✅ Mobile app: Bearer token (RLS-safe)
+export async function getAuthedUser(req: NextRequest): Promise<AuthedUserResult> {
+  // 1) Native app: Bearer token
+  const bearer = getBearerToken(req);
   if (bearer) {
     const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
       auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${bearer}` } },
     });
 
     const { data, error } = await supabase.auth.getUser(bearer);
-    if (error || !data?.user) {
-      throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-    }
-
-    return {
-      userId: data.user.id,
-      user: { id: data.user.id, email: data.user.email ?? null },
-      supabase,
-    };
+    if (error || !data?.user) return { ok: false, status: 401, error: "UNAUTHORIZED" };
+    return { ok: true, user: data.user, mode: "bearer" };
   }
 
-  // ✅ Web: cookie session
+  // 2) Web: cookie session
   const sb = await supabaseServer();
   const { data, error } = await sb.auth.getUser();
-  if (error || !data?.user) {
-    throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-  }
-
-  return {
-    userId: data.user.id,
-    user: { id: data.user.id, email: data.user.email ?? null },
-    supabase: sb,
-  };
+  if (error || !data?.user) return { ok: false, status: 401, error: "UNAUTHORIZED" };
+  return { ok: true, user: data.user, mode: "cookie" };
 }

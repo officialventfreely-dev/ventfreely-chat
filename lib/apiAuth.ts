@@ -1,4 +1,3 @@
-// FILE: lib/apiAuth.ts
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
@@ -26,12 +25,11 @@ function getSupabaseAnonKey(): string {
 
 export async function getApiSupabase(req: NextRequest): Promise<{
   userId: string;
-  user: { id: string; email: string | null };
   supabase: SupabaseClient;
 }> {
   const bearer = getBearerToken(req);
 
-  // ✅ Mobile app: Bearer token (RLS-safe)
+  // Mobile app: Bearer token (RLS-safe)
   if (bearer) {
     const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -39,27 +37,15 @@ export async function getApiSupabase(req: NextRequest): Promise<{
     });
 
     const { data, error } = await supabase.auth.getUser(bearer);
-    if (error || !data?.user) {
-      throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-    }
+    if (error || !data?.user) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
 
-    return {
-      userId: data.user.id,
-      user: { id: data.user.id, email: data.user.email ?? null },
-      supabase,
-    };
+    return { userId: data.user.id, supabase };
   }
 
-  // ✅ Web: cookie session
+  // Web: cookie session
   const sb = await supabaseServer();
   const { data, error } = await sb.auth.getUser();
-  if (error || !data?.user) {
-    throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-  }
+  if (error || !data?.user) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
 
-  return {
-    userId: data.user.id,
-    user: { id: data.user.id, email: data.user.email ?? null },
-    supabase: sb,
-  };
+  return { userId: data.user.id, supabase: sb };
 }

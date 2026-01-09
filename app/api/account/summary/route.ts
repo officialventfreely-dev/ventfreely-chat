@@ -1,6 +1,6 @@
 // FILE: app/api/account/summary/route.ts
-import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer";
+import { NextRequest, NextResponse } from "next/server";
+import { getApiSupabase } from "@/lib/apiAuth";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
 
 type UserMemoryRow = {
@@ -11,9 +11,14 @@ type UserMemoryRow = {
   updated_at?: string | null;
 };
 
-export async function GET() {
-  const supabase = await createClient();
+export async function GET(req: NextRequest) {
+  const { userId, supabase } = await getApiSupabase(req);
 
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // get email in a way that works for BOTH cookie + bearer clients
   const {
     data: { user },
     error: userErr,
@@ -24,7 +29,7 @@ export async function GET() {
   }
 
   // Access (trial/premium) from existing logic (uses subscriptions table)
-  const access = await ensureTrialAndCheckAccess(supabase, user.id);
+  const access = await ensureTrialAndCheckAccess(supabase as any, userId);
 
   // user_memory (read-only)
   let memory: UserMemoryRow | null = null;
@@ -32,7 +37,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("user_memory")
       .select("dominant_emotions, recurring_themes, preferred_tone, energy_pattern, updated_at")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (!error) memory = (data as UserMemoryRow) ?? null;

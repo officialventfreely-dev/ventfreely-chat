@@ -1,19 +1,14 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer";
+import { NextRequest, NextResponse } from "next/server";
+import { getApiSupabase } from "@/lib/apiAuth";
 
-export async function POST() {
-  const supabase = await createClient();
+export async function POST(req: NextRequest) {
+  const { userId, supabase } = await getApiSupabase(req);
 
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
-  if (userErr || !user) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { error } = await supabase.from("conversations").delete().eq("user_id", user.id);
+  const { error } = await supabase.from("conversations").delete().eq("user_id", userId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });

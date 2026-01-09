@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer";
+import { NextRequest, NextResponse } from "next/server";
+import { getApiSupabase } from "@/lib/apiAuth";
 import { ensureProfileAndGetPrefs } from "@/lib/accountPrefs";
 
-export async function GET() {
-  const supabase = await createClient();
+export async function GET(req: NextRequest) {
+  const { userId, supabase } = await getApiSupabase(req);
 
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // get email (works for both cookie + bearer)
   const {
     data: { user },
     error: userErr,
@@ -14,12 +19,20 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const prefs = await ensureProfileAndGetPrefs(supabase, { id: user.id, email: user.email });
+  const prefs = await ensureProfileAndGetPrefs(supabase as any, {
+    id: userId,
+    email: user.email ?? null,
+  });
+
   return NextResponse.json(prefs);
 }
 
-export async function POST(req: Request) {
-  const supabase = await createClient();
+export async function POST(req: NextRequest) {
+  const { userId, supabase } = await getApiSupabase(req);
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const {
     data: { user },
@@ -36,7 +49,7 @@ export async function POST(req: Request) {
   };
 
   // Ensure row exists (and get defaults)
-  await ensureProfileAndGetPrefs(supabase, { id: user.id, email: user.email });
+  await ensureProfileAndGetPrefs(supabase as any, { id: userId, email: user.email ?? null });
 
   const nextMemoryEnabled = typeof body.memoryEnabled === "boolean" ? body.memoryEnabled : undefined;
   const nextReflectionEnabled =
@@ -51,7 +64,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No changes" }, { status: 400 });
   }
 
-  const { error } = await supabase.from("profiles").update(update).eq("user_id", user.id);
+  const { error } = await supabase.from("profiles").update(update).eq("user_id", userId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
