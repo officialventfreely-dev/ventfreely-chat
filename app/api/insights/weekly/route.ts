@@ -17,12 +17,6 @@ function safeLower(s: string | null | undefined) {
   return (s ?? "").trim().toLowerCase();
 }
 
-function isFuture(iso: string | null | undefined) {
-  if (!iso) return false;
-  const t = new Date(iso).getTime();
-  return Number.isFinite(t) && t > Date.now();
-}
-
 function avg(arr: number[]) {
   if (!arr.length) return null;
   const sum = arr.reduce((a, b) => a + b, 0);
@@ -83,9 +77,7 @@ function buildInsights(params: {
   }
 
   // 3) Energy texture (very light, no “metrics” vibe)
-  const energies = last7Rows
-    .map((r) => (r.energy ?? "").trim())
-    .filter(Boolean);
+  const energies = last7Rows.map((r) => (r.energy ?? "").trim()).filter(Boolean);
 
   const lowish = energies.filter((e) => ["low", "tired", "drained"].includes(safeLower(e))).length;
   const highish = energies.filter((e) => ["great", "good", "energized"].includes(safeLower(e))).length;
@@ -127,20 +119,22 @@ export async function GET(req: NextRequest) {
   try {
     const { userId, supabase } = await getApiSupabase(req);
 
-    // Match your current behavior: ensureTrialAndCheckAccess handles 401/402 logic.
+    if (!userId) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+
     const access = await ensureTrialAndCheckAccess(supabase as any, userId);
     if (!access.hasAccess) {
       return NextResponse.json({ error: "premium_required" }, { status: 402 });
     }
 
-    // We want: last 7 days + the 7 days before that (to compute a real week-over-week trend).
-    // Fetch last 14 days inclusively (today and back 13).
+    // Fetch last 14 days (today and back 13)
     const today = new Date();
     const from = new Date(today);
     from.setDate(today.getDate() - 13);
     const fromISO = from.toISOString().slice(0, 10);
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("daily_reflections")
       .select("date, emotion, energy, score")
       .eq("user_id", userId)
@@ -154,12 +148,10 @@ export async function GET(req: NextRequest) {
     const rows = ((data ?? []) as Row[]).filter((r) => !!r?.date);
 
     // Split into prev7 and last7 based on chronological order.
-    // If fewer than 14 rows, prev7 may be short or empty (trend becomes "na").
     const prev7Rows = rows.slice(0, Math.max(0, rows.length - 7));
     const last7Rows = rows.slice(Math.max(0, rows.length - 7));
 
     const completedDays = last7Rows.length;
-
     const topEmotion = pickTopEmotion(last7Rows);
 
     const last7Scores = last7Rows
@@ -173,16 +165,9 @@ export async function GET(req: NextRequest) {
 
     const trend = computeTrendFromTwoWeeks(last7Scores, prev7Scores);
 
-    const insights = buildInsights({
-      completedDays,
-      topEmotion,
-      trend,
-      last7Rows,
-    });
-
+    const insights = buildInsights({ completedDays, topEmotion, trend, last7Rows });
     const suggestion = gentleSuggestion(trend);
 
-    // Optional but useful for UI: a simple “dots” array for the last 7 days we have.
     const days = last7Rows.map((r) => ({
       date: r.date,
       done: true,

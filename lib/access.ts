@@ -1,3 +1,5 @@
+// File: lib/access.ts
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseService } from "@/lib/supabaseService";
 
@@ -19,6 +21,19 @@ function isFuture(iso: string | null) {
   if (!iso) return false;
   const t = new Date(iso).getTime();
   return Number.isFinite(t) && t > Date.now();
+}
+
+function normalizeStatus(raw: string | null) {
+  return (raw ?? "").toLowerCase().trim();
+}
+
+function isCanceledStatus(status: string) {
+  return (
+    status === "canceled" ||
+    status === "cancelled" ||
+    status === "expired" ||
+    status === "inactive"
+  );
 }
 
 async function readLatestSubscriptionRow(
@@ -44,6 +59,17 @@ export async function ensureTrialAndCheckAccess(
   supabaseSession: SupabaseClient,
   userId: string
 ): Promise<AccessResult> {
+  // Guard: never write/read with empty userId
+  if (!userId) {
+    return {
+      hasAccess: false,
+      reason: "trial_expired",
+      trialEndsAt: null,
+      premiumUntil: null,
+      status: null,
+    };
+  }
+
   // ✅ Always read MOST RECENT row
   let subRow = await readLatestSubscriptionRow(supabaseSession, userId);
 
@@ -65,10 +91,7 @@ export async function ensureTrialAndCheckAccess(
       );
 
     if (upsertErr) {
-      console.error(
-        "ensureTrialAndCheckAccess: upsert trial row error:",
-        upsertErr
-      );
+      console.error("ensureTrialAndCheckAccess: upsert trial row error:", upsertErr);
     }
 
     // Re-read after attempting to create
@@ -87,23 +110,15 @@ export async function ensureTrialAndCheckAccess(
   }
 
   const rawStatus = (subRow.status as string | null) ?? null;
-  const status = (rawStatus ?? "").toLowerCase();
+  const status = normalizeStatus(rawStatus);
 
   const premiumUntil = (subRow.current_period_end as string | null) ?? null;
 
   // --- PREMIUM LOGIC (HARDENED) ---
-  // We do NOT allow "infinite premium" by NULL current_period_end.
   // Premium is active ONLY when current_period_end is in the future.
-  const isCanceled =
-    status === "canceled" ||
-    status === "cancelled" ||
-    status === "expired" ||
-    status === "inactive";
-
+  const canceled = isCanceledStatus(status);
   const premiumStatusOk = status === "active" || status === "trialing";
-
-  const premiumActive =
-    !isCanceled && premiumStatusOk && isFuture(premiumUntil);
+  const premiumActive = !canceled && premiumStatusOk && isFuture(premiumUntil);
 
   if (premiumActive) {
     return {
@@ -116,17 +131,32 @@ export async function ensureTrialAndCheckAccess(
   }
 
   // --- TRIAL LOGIC ---
-  // Ensure trial_ends_at exists (only for non-premium users)
+  // If status is canceled/expired/inactive, DO NOT revive access via trial_ends_at.
+  // (Important for correct paywall behavior.)
+  if (canceled) {
+    return {
+      hasAccess: false,
+      reason: "trial_expired",
+      trialEndsAt: (subRow.trial_ends_at as string | null) ?? null,
+      premiumUntil,
+      status: rawStatus,
+    };
+  }
+
+  // Ensure trial_ends_at exists for non-premium, non-canceled users
   let trialEndsAt = (subRow.trial_ends_at as string | null) ?? null;
 
   if (!trialEndsAt) {
     trialEndsAt = addDaysISO(3);
 
+    const nextStatus =
+      status === "trial" || status === "" || status === "free" ? "trial" : rawStatus ?? "trial";
+
     const { error: updErr } = await supabaseService
       .from("subscriptions")
       .update({
         trial_ends_at: trialEndsAt,
-        status: rawStatus ?? "trial",
+        status: nextStatus,
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId);

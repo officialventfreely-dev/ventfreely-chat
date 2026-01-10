@@ -1,4 +1,6 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+// File: lib/apiAuth.ts
+
+import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 
@@ -25,6 +27,7 @@ function getSupabaseAnonKey(): string {
 
 export async function getApiSupabase(req: NextRequest): Promise<{
   userId: string;
+  user: User;
   supabase: SupabaseClient;
 }> {
   const bearer = getBearerToken(req);
@@ -36,16 +39,21 @@ export async function getApiSupabase(req: NextRequest): Promise<{
       global: { headers: { Authorization: `Bearer ${bearer}` } },
     });
 
-    const { data, error } = await supabase.auth.getUser(bearer);
-    if (error || !data?.user) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
+    // IMPORTANT: Use getUser() without args so it reads from Authorization header (most stable across versions)
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user) {
+      throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
+    }
 
-    return { userId: data.user.id, supabase };
+    return { userId: data.user.id, user: data.user, supabase };
   }
 
   // Web: cookie session
   const sb = await supabaseServer();
   const { data, error } = await sb.auth.getUser();
-  if (error || !data?.user) throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
+  if (error || !data?.user) {
+    throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
+    }
 
-  return { userId: data.user.id, supabase: sb };
+  return { userId: data.user.id, user: data.user, supabase: sb };
 }

@@ -1,9 +1,10 @@
-// app/api/daily/submit/route.ts
+// File: app/api/daily/submit/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { getApiSupabase } from "@/lib/apiAuth";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
 
-// (optional but safe in App Router, helps avoid caching weirdness)
+// Helps avoid caching weirdness in App Router
 export const dynamic = "force-dynamic";
 
 type Body = {
@@ -16,26 +17,31 @@ function json(status: number, payload: any) {
   return NextResponse.json(payload, { status });
 }
 
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function localYYYYMMDD(d: Date) {
+  // Keep consistent with the user's expectation (Estonia-style "today"),
+  // without doing timezone libraries here.
+  const yyyy = d.getFullYear();
+  const mm = pad2(d.getMonth() + 1);
+  const dd = pad2(d.getDate());
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { userId, supabase } = await getApiSupabase(req);
 
     if (!userId) {
-      return json(401, { error: "Unauthorized" });
+      return json(401, { error: "unauthorized" });
     }
 
-    // Premium / Trial gate (same as everywhere)
+    // Premium / Trial gate (single source of truth)
     const access = await ensureTrialAndCheckAccess(supabase as any, userId);
-    const allowed =
-      (access as any)?.ok === true ||
-      (access as any)?.allowed === true ||
-      (access as any)?.hasAccess === true ||
-      (access as any)?.premium === true ||
-      (access as any)?.isPremium === true ||
-      ["premium", "trial", "active", "trialing"].includes((access as any)?.access ?? (access as any)?.status);
-
-    if (!allowed) {
-      return json(402, { error: "Premium required" });
+    if (!access.hasAccess) {
+      return json(402, { error: "premium_required" });
     }
 
     const body = (await req.json().catch(() => ({}))) as Body;
@@ -45,24 +51,18 @@ export async function POST(req: NextRequest) {
     const energy = String(body.energy ?? "").trim();
 
     if (positiveText.length < 3) {
-      return json(400, { error: "positiveText too short" });
+      return json(400, { error: "positiveText_too_short" });
     }
     if (!emotion) {
-      return json(400, { error: "emotion required" });
+      return json(400, { error: "emotion_required" });
     }
     if (!energy) {
-      return json(400, { error: "energy required" });
+      return json(400, { error: "energy_required" });
     }
 
-    // Date (EE) – simplest: rely on DB default date if you have it.
-    // If your table requires a date, set it here:
-    const today = new Date();
-    const yyyy = today.getUTCFullYear();
-    const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
-    const dd = String(today.getUTCDate()).padStart(2, "0");
-    const date = `${yyyy}-${mm}-${dd}`;
+    const date = localYYYYMMDD(new Date());
 
-    // Save daily_reflections (upsert by user_id+date if you have that unique)
+    // Save daily_reflections (upsert by user_id+date)
     const { error: upsertErr } = await supabase.from("daily_reflections").upsert(
       {
         user_id: userId,
@@ -76,12 +76,12 @@ export async function POST(req: NextRequest) {
     );
 
     if (upsertErr) {
-      return json(500, { error: upsertErr.message });
+      console.error("daily/submit upsert error:", upsertErr);
+      return json(500, { error: "save_failed" });
     }
 
-    // Optional: keep a light user_memory update (safe/no-op if columns differ)
-    // If your user_memory schema is different, this won't break build; but could 500 at runtime.
-    // Comment out if you don't want it.
+    // Lightweight user_memory touch (never fail the whole request)
+    // If your schema expects more, you can expand later — keep ETAPP 4 safe first.
     try {
       await supabase.from("user_memory").upsert(
         {
@@ -90,10 +90,14 @@ export async function POST(req: NextRequest) {
         },
         { onConflict: "user_id" }
       );
-    } catch {}
+    } catch (e) {
+      // ignore intentionally
+    }
 
     return json(200, { ok: true });
   } catch (e: any) {
-    return json(500, { error: e?.message ?? "Server error" });
+    if (e?.status === 401) return json(401, { error: "unauthorized" });
+    console.error("daily/submit error:", e);
+    return json(500, { error: "server_error" });
   }
 }
