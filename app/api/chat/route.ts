@@ -1,9 +1,9 @@
-// File: ventfreely-chat/app/api/chat/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
 import { getApiSupabase } from "@/lib/apiAuth";
+import { supabaseService } from "@/lib/supabaseService";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
@@ -15,8 +15,8 @@ const PRESENCE_PENALTY = 0;
 const FREQUENCY_PENALTY = 0;
 const SUMMARY_MAX_TOKENS = 200;
 
-// ✅ Free tier daily message limit
-const FREE_DAILY_MESSAGES = 9;
+// Free tier limit
+const FREE_DAILY_LIMIT = 9;
 
 type UserMemoryRow = {
   dominant_emotions: string[] | null;
@@ -72,7 +72,7 @@ function buildMemoryBlock(memory: UserMemoryRow | null) {
 
   const lines: string[] = [];
   if (memory.dominant_emotions?.length)
-    lines.push(`- Emotions that sometimes show up: ${memory.dominant_emotions.join(", ")}`);
+    lines.push(`- Emotions that sometimes appear: ${memory.dominant_emotions.join(", ")}`);
   if (memory.recurring_themes?.length)
     lines.push(`- Topics that sometimes come up: ${memory.recurring_themes.join(", ")}`);
   if (memory.preferred_tone) lines.push(`- Tone preference: ${memory.preferred_tone}`);
@@ -87,11 +87,11 @@ Confidence: ${level} (${score}/100)
 ${lines.join("\n")}
 
 How to use this:
-- Treat these as hints, not facts.
+- Treat as hints, not facts.
 - Only reference a hint if it clearly helps the user feel understood.
 - Use tentative language: "maybe", "it sounds like", "sometimes", "could be".
-- Never claim certainty. Never label/diagnose.
-- Never mention memory, data, or systems.
+- Never claim certainty, never label/diagnose.
+- Never mention databases, memory systems, or "patterns".
 `.trim();
 }
 
@@ -102,51 +102,57 @@ function getLastUserText(messages: { role: "user" | "assistant"; content: string
   return "";
 }
 
-function todayISODate() {
-  // Server-local YYYY-MM-DD is fine for MVP daily quota
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+function utcDateYYYYMMDD(d = new Date()) {
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
-async function enforceFreeDailyLimit(supabase: any, userId: string) {
-  const date = todayISODate();
+async function consumeFreeMessage(userId: string): Promise<{ allowed: boolean; remaining: number }> {
+  const date = utcDateYYYYMMDD();
 
-  const { data: row, error } = await supabase
-    .from("chat_usage_daily")
+  // Read existing count
+  const { data: row, error: readErr } = await supabaseService
+    .from("chat_daily_usage")
     .select("count")
     .eq("user_id", userId)
     .eq("date", date)
     .maybeSingle();
 
-  if (error) {
-    // If quota table fails, fail safely (don’t grant unlimited)
-    return { allowed: false, remaining: 0, date };
+  if (readErr) {
+    // Fail safe: if usage table errors, do NOT give unlimited access.
+    console.error("chat_daily_usage read error:", readErr);
+    return { allowed: false, remaining: 0 };
   }
 
-  const used = typeof row?.count === "number" ? row.count : 0;
+  const current = typeof row?.count === "number" ? row.count : 0;
 
-  if (used >= FREE_DAILY_MESSAGES) {
-    return { allowed: false, remaining: 0, date };
+  if (current >= FREE_DAILY_LIMIT) {
+    return { allowed: false, remaining: 0 };
   }
 
-  // increment (upsert)
-  const next = used + 1;
+  const next = current + 1;
 
-  const { error: upsertErr } = await supabase
-    .from("chat_usage_daily")
+  const { error: upsertErr } = await supabaseService
+    .from("chat_daily_usage")
     .upsert(
-      { user_id: userId, date, count: next, updated_at: new Date().toISOString() },
+      {
+        user_id: userId,
+        date,
+        count: next,
+        updated_at: new Date().toISOString(),
+      },
       { onConflict: "user_id,date" }
     );
 
   if (upsertErr) {
-    return { allowed: false, remaining: 0, date };
+    console.error("chat_daily_usage upsert error:", upsertErr);
+    return { allowed: false, remaining: 0 };
   }
 
-  return { allowed: true, remaining: Math.max(0, FREE_DAILY_MESSAGES - next), date };
+  const remaining = clamp(FREE_DAILY_LIMIT - next, 0, FREE_DAILY_LIMIT);
+  return { allowed: true, remaining };
 }
 
 export async function POST(req: NextRequest) {
@@ -158,29 +164,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No messages provided" }, { status: 400 });
     }
 
-    // 1) Auth (Bearer or cookie)
+    // 1) Auth (Bearer or cookie) + correct Supabase client
     const { userId, supabase } = await getApiSupabase(req);
-    if (!userId) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-    // 2) Access
+    if (!userId) {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
+    // 2) Access: Premium or Free
     const access = await ensureTrialAndCheckAccess(supabase as any, userId);
-    const hasPremium = !!access?.hasAccess;
+    const isPremium = !!access?.hasAccess;
 
-    // 3) Free-tier limit (only if NOT premium)
-    let freeRemaining: number | null = null;
-    if (!hasPremium) {
-      const quota = await enforceFreeDailyLimit(supabase as any, userId);
-      freeRemaining = quota.remaining;
+    // 3) Free tier limit (count ONLY when user sends a message)
+    // (This endpoint is called per message, so we consume 1 unit per call.)
+    let remaining: number | null = null;
 
-      if (!quota.allowed) {
+    if (!isPremium) {
+      const usage = await consumeFreeMessage(userId);
+      if (!usage.allowed) {
         return NextResponse.json(
-          { error: "PAYWALL", remaining: 0 },
+          { error: "PAYWALL", reason: "free_limit_reached", remaining: 0 },
           { status: 402 }
         );
       }
+      remaining = usage.remaining;
     }
 
-    // 4) Read user_memory
+    // 4) Read user_memory (RLS)
     let memory: UserMemoryRow | null = null;
     try {
       const { data, error } = await (supabase as any)
@@ -237,7 +247,7 @@ Safety:
 - If user expresses intent to self-harm or harm others: respond calmly, encourage reaching local emergency services or a trusted person. Keep it short, non-graphic, and caring.
 
 ${memoryBlock ? `\n${memoryBlock}\n` : ""}
-`.trim();
+    `.trim();
 
     const openAiMessages = [
       { role: "system" as const, content: systemPrompt },
@@ -255,7 +265,7 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
         max_tokens: MAX_TOKENS,
         top_p: TOP_P,
         presence_penalty: PRESENCE_PENALTY,
-        frequency_penalty: FREQUENCY_PENALTY,
+        frequency_punalty: FREQUENCY_PENALTY,
       } as any
     );
 
@@ -263,7 +273,7 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       completion.choices[0]?.message?.content ??
       "I’m here. What part of this is hitting you the hardest right now?";
 
-    // Save conversation memory (same as before)
+    // 5) Save conversation memory
     if (lastUserMessage) {
       try {
         let summary: string | null = null;
@@ -323,10 +333,10 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       }
     }
 
-    // Return remaining for UI (optional)
+    // 6) Return reply + remaining
     return NextResponse.json({
       reply,
-      remaining: freeRemaining, // null for premium users
+      remaining: isPremium ? null : remaining,
     });
   } catch (err: any) {
     if (err?.status === 401) {
