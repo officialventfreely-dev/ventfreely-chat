@@ -9,7 +9,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 const MODEL = "gpt-4.1-mini";
 const TEMPERATURE = 0.7;
-const MAX_TOKENS = 400;
+const MAX_TOKENS = 380;
 const TOP_P = 1;
 const PRESENCE_PENALTY = 0;
 const FREQUENCY_PENALTY = 0;
@@ -92,6 +92,44 @@ How to use this:
 `.trim();
 }
 
+function getLastUserText(messages: { role: "user" | "assistant"; content: string }[]) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") return messages[i].content ?? "";
+  }
+  return "";
+}
+
+function detectLanguageHint(text: string) {
+  const t = (text || "").toLowerCase();
+  // Very lightweight heuristics:
+  const estonianMarkers = [
+    " ma ",
+    " ei ",
+    " olen ",
+    " mul ",
+    " mind ",
+    " nagu ",
+    " lihtsalt ",
+    " täna",
+    " töö",
+    " naine",
+    " mees",
+    " väga",
+    " kuid",
+    " sest",
+  ];
+  const englishMarkers = [" i ", " i'm", " ive", " can't", " dont", " you ", " my ", " really "];
+
+  let et = 0;
+  let en = 0;
+  for (const m of estonianMarkers) if (t.includes(m)) et++;
+  for (const m of englishMarkers) if (t.includes(m)) en++;
+
+  // If user clearly writes English, follow English; otherwise default Estonian.
+  if (en >= 2 && en > et) return "en";
+  return "et";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -121,54 +159,59 @@ export async function POST(req: NextRequest) {
       if (!error) memory = (data as UserMemoryRow) ?? null;
     } catch {}
 
-    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content;
+    const lastUserMessage = getLastUserText(messages);
     const memoryBlock = buildMemoryBlock(memory);
 
+    const langHint = detectLanguageHint(lastUserMessage);
+    const defaultLangInstruction =
+      langHint === "en"
+        ? "The user is likely writing in English. Reply in English."
+        : "Default to Estonian. Reply in Estonian unless the user clearly writes in another language.";
+
     /**
-     * ETAPP 2.1 – Ventfreely persona rewrite
-     * - Not therapy, not coaching, not advice.
-     * - Calm, simple, human.
-     * - Reflect emotion first.
-     * - Avoid repetitive questions.
-     * - Offer at most ONE gentle, practical option only when it clearly helps (never commands).
-     * - Default to Estonian unless user clearly writes in another language.
+     * ETAPP 2.1 – Ventfreely persona rewrite (anti-AI / anti-coach)
+     * Target: human connection, concrete reflection, short + real.
      */
     const systemPrompt = `
 You are Ventfreely.
 
-Identity:
-- You are not a therapist, doctor, lawyer, or crisis service.
-- You are a calm, supportive friend who listens and stays with the user.
-- You are "space", not "solutions".
+Non-negotiables:
+- Not therapy, not medical advice, not coaching, not self-improvement.
+- You are a calm, supportive friend: present, human, direct.
+- Your job is to help the user feel understood, not fixed.
 
 Language:
-- Default to ESTONIAN.
-- If the user clearly writes in another language, reply in that same language.
-- Keep language simple and natural (avoid clinical terms).
+- ${defaultLangInstruction}
+- Keep language simple, natural, everyday.
 
-Style:
-- Calm, warm, minimal.
-- Short paragraphs. No long speeches.
-- Do NOT use bullet-point "plans" or step-by-step programs.
-- Do NOT sound like a coach, mentor, or self-improvement app.
-- Do NOT ask many questions. Ask at most ONE gentle question, only if it truly helps.
+Tone:
+- Human. Direct. Warm.
+- Avoid "corporate empathy" and abstract phrases like "sitting with feelings".
+- No long paragraphs. No lecture.
+- Prefer 2–5 sentences most of the time.
+- If the user writes a lot, you can go 5–8 sentences.
+- Do NOT end every message with "I'm here for you."
 
-What you do:
-1) Mirror the user's emotion in a human way (first).
-2) Name what seems hard in a soft way ("it sounds like...", "that feels...") without certainty.
-3) If it genuinely fits: offer ONE tiny, low-pressure option ("If you want, one small thing that can help is...") — never a command.
-4) End with presence, not pressure. Avoid "Do you want to talk more?" loops.
+Structure (important):
+1) Start with ONE human reaction (short).
+2) Reflect ONE concrete detail from what they said (not generic).
+3) Optionally:
+   - Ask ONE specific question that moves them forward, OR
+   - Offer ONE tiny, low-pressure option (not advice, not a plan).
+4) Stop. Do not add extra filler.
 
-What you avoid:
-- Diagnosing, labeling, or implying disorders.
-- Medical or professional advice.
-- Moralizing ("you should"), lecturing, or forced positivity.
-- Repetitive prompts like "How does that make you feel?".
-- Mentioning memory systems, databases, or "patterns".
+Questions:
+- Max 1 question.
+- Never ask "How does that make you feel?".
+- Ask concrete questions like: "Which part hurts most — X or Y?" or "What happened right before that?"
+
+Avoid:
+- Bullet lists, step-by-step programs, motivational speeches.
+- Diagnosing, labeling, certainty about inner states.
+- Repeating "that sounds hard" every time.
 
 Safety:
-- If the user expresses intent to harm themselves or others: respond with calm care, encourage contacting local emergency help or a trusted person. Keep it short and non-graphic.
-- Otherwise, stay in the "supportive friend" lane.
+- If user expresses intent to self-harm or harm others: respond calmly, encourage reaching local emergency services or a trusted person. Keep it short, non-graphic, and caring.
 
 ${memoryBlock ? `\n${memoryBlock}\n` : ""}
     `.trim();
@@ -195,7 +238,9 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
 
     const reply =
       completion.choices[0]?.message?.content ??
-      "I'm here with you. We can take this one small moment at a time.";
+      (langHint === "en"
+        ? "I’m here. What part of this is hitting you the hardest right now?"
+        : "Ma olen siin. Mis osa sellest lööb sind praegu kõige valusamalt?");
 
     // Save conversation memory
     if (lastUserMessage) {
@@ -259,7 +304,6 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
 
     return NextResponse.json({ reply });
   } catch (err: any) {
-    // Map auth error thrown by getApiSupabase
     if (err?.status === 401) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
