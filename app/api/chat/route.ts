@@ -1,3 +1,5 @@
+// FILE: ventfreely-chat/app/api/chat/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
@@ -66,8 +68,10 @@ function buildMemoryBlock(memory: UserMemoryRow | null) {
   if (score < 20) return "";
 
   const lines: string[] = [];
-  if (memory.dominant_emotions?.length) lines.push(`- Emotions that sometimes appear: ${memory.dominant_emotions.join(", ")}`);
-  if (memory.recurring_themes?.length) lines.push(`- Themes that sometimes come up: ${memory.recurring_themes.join(", ")}`);
+  if (memory.dominant_emotions?.length)
+    lines.push(`- Emotions that sometimes appear: ${memory.dominant_emotions.join(", ")}`);
+  if (memory.recurring_themes?.length)
+    lines.push(`- Topics that sometimes come up: ${memory.recurring_themes.join(", ")}`);
   if (memory.preferred_tone) lines.push(`- Tone preference: ${memory.preferred_tone}`);
   if (memory.energy_pattern) lines.push(`- Energy tendency: ${memory.energy_pattern}`);
 
@@ -81,10 +85,10 @@ ${lines.join("\n")}
 
 How to use this:
 - Treat as hints, not facts.
-- Only reflect a hint if it clearly helps the user feel understood.
+- Only reference a hint if it clearly helps the user feel understood.
 - Use tentative language: "maybe", "it sounds like", "sometimes", "could be".
 - Never claim certainty, never label/diagnose.
-- Never mention any database, memory system, or "patterns" explicitly.
+- Never mention databases, memory systems, or "patterns".
 `.trim();
 }
 
@@ -97,16 +101,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No messages provided" }, { status: 400 });
     }
 
-    // ✅ 1) Auth (Bearer or cookie) + correct supabase client
+    // 1) Auth (Bearer or cookie) + correct Supabase client
     const { userId, supabase } = await getApiSupabase(req);
 
-    // ✅ 2) Premium gate
+    // 2) Premium gate
     const access = await ensureTrialAndCheckAccess(supabase as any, userId);
     if (!access.hasAccess) {
       return NextResponse.json({ error: "PAYWALL", access }, { status: 402 });
     }
 
-    // ✅ 3) Read user_memory (RLS)
+    // 3) Read user_memory (RLS)
     let memory: UserMemoryRow | null = null;
     try {
       const { data, error } = await (supabase as any)
@@ -120,23 +124,51 @@ export async function POST(req: NextRequest) {
     const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content;
     const memoryBlock = buildMemoryBlock(memory);
 
+    /**
+     * ETAPP 2.1 – Ventfreely persona rewrite
+     * - Not therapy, not coaching, not advice.
+     * - Calm, simple, human.
+     * - Reflect emotion first.
+     * - Avoid repetitive questions.
+     * - Offer at most ONE gentle, practical option only when it clearly helps (never commands).
+     * - Default to Estonian unless user clearly writes in another language.
+     */
     const systemPrompt = `
-You are Ventfreely, a calm and supportive AI friend in a mental-health style chat.
+You are Ventfreely.
 
-Rules:
-- Not a therapist/doctor/lawyer.
-- No professional advice.
-- No self-harm/violence/illegal instructions.
-- Warm, calm, short responses.
-- Ask 1 gentle question max when useful.
-- Reply in the same language as the user.
-- Do not over-assume; reflect what the user actually said.
+Identity:
+- You are not a therapist, doctor, lawyer, or crisis service.
+- You are a calm, supportive friend who listens and stays with the user.
+- You are "space", not "solutions".
 
-Tone & safety:
-- Prefer validation + small reflection over advice.
-- If the user wants action steps, give tiny, low-pressure steps.
-- Never diagnose. Never label the user.
-- Avoid certainty words like "clearly" or "definitely" about the user's inner state.
+Language:
+- Default to ESTONIAN.
+- If the user clearly writes in another language, reply in that same language.
+- Keep language simple and natural (avoid clinical terms).
+
+Style:
+- Calm, warm, minimal.
+- Short paragraphs. No long speeches.
+- Do NOT use bullet-point "plans" or step-by-step programs.
+- Do NOT sound like a coach, mentor, or self-improvement app.
+- Do NOT ask many questions. Ask at most ONE gentle question, only if it truly helps.
+
+What you do:
+1) Mirror the user's emotion in a human way (first).
+2) Name what seems hard in a soft way ("it sounds like...", "that feels...") without certainty.
+3) If it genuinely fits: offer ONE tiny, low-pressure option ("If you want, one small thing that can help is...") — never a command.
+4) End with presence, not pressure. Avoid "Do you want to talk more?" loops.
+
+What you avoid:
+- Diagnosing, labeling, or implying disorders.
+- Medical or professional advice.
+- Moralizing ("you should"), lecturing, or forced positivity.
+- Repetitive prompts like "How does that make you feel?".
+- Mentioning memory systems, databases, or "patterns".
+
+Safety:
+- If the user expresses intent to harm themselves or others: respond with calm care, encourage contacting local emergency help or a trusted person. Keep it short and non-graphic.
+- Otherwise, stay in the "supportive friend" lane.
 
 ${memoryBlock ? `\n${memoryBlock}\n` : ""}
     `.trim();
@@ -149,19 +181,21 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       })),
     ];
 
-    const completion = await openai.chat.completions.create({
-      model: MODEL,
-      messages: openAiMessages,
-      temperature: TEMPERATURE,
-      max_tokens: MAX_TOKENS,
-      top_p: TOP_P,
-      presence_penalty: PRESENCE_PENALTY,
-      frequency_penALTY: FREQUENCY_PENALTY as any,
-    } as any);
+    const completion = await openai.chat.completions.create(
+      {
+        model: MODEL,
+        messages: openAiMessages,
+        temperature: TEMPERATURE,
+        max_tokens: MAX_TOKENS,
+        top_p: TOP_P,
+        presence_penalty: PRESENCE_PENALTY,
+        frequency_penalty: FREQUENCY_PENALTY,
+      } as any
+    );
 
     const reply =
       completion.choices[0]?.message?.content ??
-      "I’m here with you. We can take it one small step at a time.";
+      "I'm here with you. We can take this one small moment at a time.";
 
     // Save conversation memory
     if (lastUserMessage) {
@@ -225,7 +259,7 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
 
     return NextResponse.json({ reply });
   } catch (err: any) {
-    // map auth error thrown by getApiSupabase
+    // Map auth error thrown by getApiSupabase
     if (err?.status === 401) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
