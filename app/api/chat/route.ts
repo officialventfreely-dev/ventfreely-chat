@@ -1,4 +1,4 @@
-// FILE: ventfreely-chat/app/api/chat/route.ts
+// File: ventfreely-chat/app/api/chat/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
@@ -14,6 +14,9 @@ const TOP_P = 1;
 const PRESENCE_PENALTY = 0;
 const FREQUENCY_PENALTY = 0;
 const SUMMARY_MAX_TOKENS = 200;
+
+// ✅ Free tier daily message limit
+const FREE_DAILY_MESSAGES = 9;
 
 type UserMemoryRow = {
   dominant_emotions: string[] | null;
@@ -69,7 +72,7 @@ function buildMemoryBlock(memory: UserMemoryRow | null) {
 
   const lines: string[] = [];
   if (memory.dominant_emotions?.length)
-    lines.push(`- Emotions that sometimes appear: ${memory.dominant_emotions.join(", ")}`);
+    lines.push(`- Emotions that sometimes show up: ${memory.dominant_emotions.join(", ")}`);
   if (memory.recurring_themes?.length)
     lines.push(`- Topics that sometimes come up: ${memory.recurring_themes.join(", ")}`);
   if (memory.preferred_tone) lines.push(`- Tone preference: ${memory.preferred_tone}`);
@@ -84,11 +87,11 @@ Confidence: ${level} (${score}/100)
 ${lines.join("\n")}
 
 How to use this:
-- Treat as hints, not facts.
+- Treat these as hints, not facts.
 - Only reference a hint if it clearly helps the user feel understood.
 - Use tentative language: "maybe", "it sounds like", "sometimes", "could be".
-- Never claim certainty, never label/diagnose.
-- Never mention databases, memory systems, or "patterns".
+- Never claim certainty. Never label/diagnose.
+- Never mention memory, data, or systems.
 `.trim();
 }
 
@@ -97,6 +100,53 @@ function getLastUserText(messages: { role: "user" | "assistant"; content: string
     if (messages[i].role === "user") return messages[i].content ?? "";
   }
   return "";
+}
+
+function todayISODate() {
+  // Server-local YYYY-MM-DD is fine for MVP daily quota
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+async function enforceFreeDailyLimit(supabase: any, userId: string) {
+  const date = todayISODate();
+
+  const { data: row, error } = await supabase
+    .from("chat_usage_daily")
+    .select("count")
+    .eq("user_id", userId)
+    .eq("date", date)
+    .maybeSingle();
+
+  if (error) {
+    // If quota table fails, fail safely (don’t grant unlimited)
+    return { allowed: false, remaining: 0, date };
+  }
+
+  const used = typeof row?.count === "number" ? row.count : 0;
+
+  if (used >= FREE_DAILY_MESSAGES) {
+    return { allowed: false, remaining: 0, date };
+  }
+
+  // increment (upsert)
+  const next = used + 1;
+
+  const { error: upsertErr } = await supabase
+    .from("chat_usage_daily")
+    .upsert(
+      { user_id: userId, date, count: next, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,date" }
+    );
+
+  if (upsertErr) {
+    return { allowed: false, remaining: 0, date };
+  }
+
+  return { allowed: true, remaining: Math.max(0, FREE_DAILY_MESSAGES - next), date };
 }
 
 export async function POST(req: NextRequest) {
@@ -108,16 +158,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No messages provided" }, { status: 400 });
     }
 
-    // 1) Auth (Bearer or cookie) + correct Supabase client
+    // 1) Auth (Bearer or cookie)
     const { userId, supabase } = await getApiSupabase(req);
+    if (!userId) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-    // 2) Premium gate
+    // 2) Access
     const access = await ensureTrialAndCheckAccess(supabase as any, userId);
-    if (!access.hasAccess) {
-      return NextResponse.json({ error: "PAYWALL", access }, { status: 402 });
+    const hasPremium = !!access?.hasAccess;
+
+    // 3) Free-tier limit (only if NOT premium)
+    let freeRemaining: number | null = null;
+    if (!hasPremium) {
+      const quota = await enforceFreeDailyLimit(supabase as any, userId);
+      freeRemaining = quota.remaining;
+
+      if (!quota.allowed) {
+        return NextResponse.json(
+          { error: "PAYWALL", remaining: 0 },
+          { status: 402 }
+        );
+      }
     }
 
-    // 3) Read user_memory (RLS)
+    // 4) Read user_memory
     let memory: UserMemoryRow | null = null;
     try {
       const { data, error } = await (supabase as any)
@@ -174,7 +237,7 @@ Safety:
 - If user expresses intent to self-harm or harm others: respond calmly, encourage reaching local emergency services or a trusted person. Keep it short, non-graphic, and caring.
 
 ${memoryBlock ? `\n${memoryBlock}\n` : ""}
-    `.trim();
+`.trim();
 
     const openAiMessages = [
       { role: "system" as const, content: systemPrompt },
@@ -200,7 +263,7 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       completion.choices[0]?.message?.content ??
       "I’m here. What part of this is hitting you the hardest right now?";
 
-    // Save conversation memory
+    // Save conversation memory (same as before)
     if (lastUserMessage) {
       try {
         let summary: string | null = null;
@@ -260,7 +323,11 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       }
     }
 
-    return NextResponse.json({ reply });
+    // Return remaining for UI (optional)
+    return NextResponse.json({
+      reply,
+      remaining: freeRemaining, // null for premium users
+    });
   } catch (err: any) {
     if (err?.status === 401) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });

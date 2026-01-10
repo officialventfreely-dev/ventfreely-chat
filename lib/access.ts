@@ -1,21 +1,14 @@
 // File: lib/access.ts
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { supabaseService } from "@/lib/supabaseService";
 
 type AccessResult = {
-  hasAccess: boolean;
-  reason: "trial_active" | "premium_active" | "trial_expired";
-  trialEndsAt: string | null;
+  hasAccess: boolean; // true = Premium (paid)
+  reason: "premium_active" | "free";
+  trialEndsAt: string | null; // kept for compatibility (always null in new model)
   premiumUntil: string | null;
   status: string | null;
 };
-
-function addDaysISO(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
-}
 
 function isFuture(iso: string | null) {
   if (!iso) return false;
@@ -55,6 +48,15 @@ async function readLatestSubscriptionRow(
   return subRows?.[0] ?? null;
 }
 
+/**
+ * NEW MODEL (Ventfreely):
+ * - Free by default (no auto-trial creation)
+ * - Premium ONLY if:
+ *    status is active/trialing
+ *    AND current_period_end is in the future
+ * - Trial rows (status="trial", trial_ends_at) are ignored for access
+ *   (they can exist in DB from older versions; doesn't matter)
+ */
 export async function ensureTrialAndCheckAccess(
   supabaseSession: SupabaseClient,
   userId: string
@@ -63,50 +65,24 @@ export async function ensureTrialAndCheckAccess(
   if (!userId) {
     return {
       hasAccess: false,
-      reason: "trial_expired",
+      reason: "free",
       trialEndsAt: null,
       premiumUntil: null,
       status: null,
     };
   }
 
-  // ✅ Always read MOST RECENT row
-  let subRow = await readLatestSubscriptionRow(supabaseSession, userId);
+  const subRow = await readLatestSubscriptionRow(supabaseSession, userId);
 
-  // If no row -> create trial row (service role) using UPSERT to avoid duplicates
+  // No subscription row => FREE
   if (!subRow) {
-    const trialEndsAt = addDaysISO(3);
-
-    const { error: upsertErr } = await supabaseService
-      .from("subscriptions")
-      .upsert(
-        {
-          user_id: userId,
-          status: "trial",
-          trial_ends_at: trialEndsAt,
-          updated_at: new Date().toISOString(),
-          // IMPORTANT: do NOT set shopify_subscription_id here (trial rows must keep it NULL)
-        },
-        { onConflict: "user_id" }
-      );
-
-    if (upsertErr) {
-      console.error("ensureTrialAndCheckAccess: upsert trial row error:", upsertErr);
-    }
-
-    // Re-read after attempting to create
-    subRow = await readLatestSubscriptionRow(supabaseSession, userId);
-
-    // If still no row (very unlikely) -> deny safely
-    if (!subRow) {
-      return {
-        hasAccess: false,
-        reason: "trial_expired",
-        trialEndsAt: null,
-        premiumUntil: null,
-        status: null,
-      };
-    }
+    return {
+      hasAccess: false,
+      reason: "free",
+      trialEndsAt: null,
+      premiumUntil: null,
+      status: null,
+    };
   }
 
   const rawStatus = (subRow.status as string | null) ?? null;
@@ -114,8 +90,7 @@ export async function ensureTrialAndCheckAccess(
 
   const premiumUntil = (subRow.current_period_end as string | null) ?? null;
 
-  // --- PREMIUM LOGIC (HARDENED) ---
-  // Premium is active ONLY when current_period_end is in the future.
+  // Premium active ONLY if paid period exists and is in the future
   const canceled = isCanceledStatus(status);
   const premiumStatusOk = status === "active" || status === "trialing";
   const premiumActive = !canceled && premiumStatusOk && isFuture(premiumUntil);
@@ -124,71 +99,17 @@ export async function ensureTrialAndCheckAccess(
     return {
       hasAccess: true,
       reason: "premium_active",
-      trialEndsAt: (subRow.trial_ends_at as string | null) ?? null,
+      trialEndsAt: null,
       premiumUntil,
       status: rawStatus,
     };
   }
 
-  // --- TRIAL LOGIC ---
-  // If status is canceled/expired/inactive, DO NOT revive access via trial_ends_at.
-  // (Important for correct paywall behavior.)
-  if (canceled) {
-    return {
-      hasAccess: false,
-      reason: "trial_expired",
-      trialEndsAt: (subRow.trial_ends_at as string | null) ?? null,
-      premiumUntil,
-      status: rawStatus,
-    };
-  }
-
-  // Ensure trial_ends_at exists for non-premium, non-canceled users
-  let trialEndsAt = (subRow.trial_ends_at as string | null) ?? null;
-
-  if (!trialEndsAt) {
-    trialEndsAt = addDaysISO(3);
-
-    const nextStatus =
-      status === "trial" || status === "" || status === "free" ? "trial" : rawStatus ?? "trial";
-
-    const { error: updErr } = await supabaseService
-      .from("subscriptions")
-      .update({
-        trial_ends_at: trialEndsAt,
-        status: nextStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", userId);
-
-    if (updErr) {
-      console.error("ensureTrialAndCheckAccess: set trial_ends_at error:", updErr);
-
-      // Re-read once more; don't hard-fail if DB updated elsewhere.
-      const reread = await readLatestSubscriptionRow(supabaseSession, userId);
-      if (reread) {
-        subRow = reread;
-        trialEndsAt = (subRow.trial_ends_at as string | null) ?? trialEndsAt;
-      }
-    }
-  }
-
-  const trialActive = isFuture(trialEndsAt);
-
-  if (trialActive) {
-    return {
-      hasAccess: true,
-      reason: "trial_active",
-      trialEndsAt,
-      premiumUntil,
-      status: rawStatus,
-    };
-  }
-
+  // Everything else => FREE
   return {
     hasAccess: false,
-    reason: "trial_expired",
-    trialEndsAt,
+    reason: "free",
+    trialEndsAt: null,
     premiumUntil,
     status: rawStatus,
   };

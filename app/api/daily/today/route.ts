@@ -1,34 +1,38 @@
+// File: app/api/daily/today/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
-import { getTodayEE } from "@/lib/getTodayEE";
-import { ensureDailyAccess } from "@/lib/dailyAccess";
 import { getApiSupabase } from "@/lib/apiAuth";
+
+export const dynamic = "force-dynamic";
+
+function json(status: number, payload: any) {
+  return NextResponse.json(payload, { status });
+}
 
 export async function GET(req: NextRequest) {
   try {
     const { userId, supabase } = await getApiSupabase(req);
 
-    const access = await ensureDailyAccess(userId);
-    if (!access?.hasAccess) {
-      return NextResponse.json({ error: "Payment required" }, { status: 402 });
-    }
+    if (!userId) return json(401, { error: "unauthorized" });
 
-    const today = getTodayEE();
+    const today = new Date();
+    const yyyy = today.getUTCFullYear();
+    const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(today.getUTCDate()).padStart(2, "0");
+    const date = `${yyyy}-${mm}-${dd}`;
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("daily_reflections")
-      .select("*")
+      .select("date, positive_text, emotion, energy")
       .eq("user_id", userId)
-      .eq("date", today)
+      .eq("date", date)
       .maybeSingle();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return json(500, { error: "fetch_failed" });
 
-    return NextResponse.json({ today, reflection: data ?? null });
-  } catch (err: any) {
-    if (err?.status === 401) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error in /api/daily/today:", err);
-    return NextResponse.json({ error: "Failed" }, { status: 500 });
+    return json(200, { date, reflection: data ?? null });
+  } catch (e: any) {
+    if (e?.status === 401) return json(401, { error: "unauthorized" });
+    return json(500, { error: "server_error" });
   }
 }
