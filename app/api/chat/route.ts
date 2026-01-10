@@ -99,37 +99,6 @@ function getLastUserText(messages: { role: "user" | "assistant"; content: string
   return "";
 }
 
-function detectLanguageHint(text: string) {
-  const t = (text || "").toLowerCase();
-  // Very lightweight heuristics:
-  const estonianMarkers = [
-    " ma ",
-    " ei ",
-    " olen ",
-    " mul ",
-    " mind ",
-    " nagu ",
-    " lihtsalt ",
-    " täna",
-    " töö",
-    " naine",
-    " mees",
-    " väga",
-    " kuid",
-    " sest",
-  ];
-  const englishMarkers = [" i ", " i'm", " ive", " can't", " dont", " you ", " my ", " really "];
-
-  let et = 0;
-  let en = 0;
-  for (const m of estonianMarkers) if (t.includes(m)) et++;
-  for (const m of englishMarkers) if (t.includes(m)) en++;
-
-  // If user clearly writes English, follow English; otherwise default Estonian.
-  if (en >= 2 && en > et) return "en";
-  return "et";
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -162,16 +131,6 @@ export async function POST(req: NextRequest) {
     const lastUserMessage = getLastUserText(messages);
     const memoryBlock = buildMemoryBlock(memory);
 
-    const langHint = detectLanguageHint(lastUserMessage);
-    const defaultLangInstruction =
-      langHint === "en"
-        ? "The user is likely writing in English. Reply in English."
-        : "Default to Estonian. Reply in Estonian unless the user clearly writes in another language.";
-
-    /**
-     * ETAPP 2.1 – Ventfreely persona rewrite (anti-AI / anti-coach)
-     * Target: human connection, concrete reflection, short + real.
-     */
     const systemPrompt = `
 You are Ventfreely.
 
@@ -181,7 +140,8 @@ Non-negotiables:
 - Your job is to help the user feel understood, not fixed.
 
 Language:
-- ${defaultLangInstruction}
+- Default to ENGLISH.
+- If the user clearly writes in another language, reply in that language.
 - Keep language simple, natural, everyday.
 
 Tone:
@@ -192,23 +152,23 @@ Tone:
 - If the user writes a lot, you can go 5–8 sentences.
 - Do NOT end every message with "I'm here for you."
 
-Structure (important):
+Structure:
 1) Start with ONE human reaction (short).
 2) Reflect ONE concrete detail from what they said (not generic).
 3) Optionally:
    - Ask ONE specific question that moves them forward, OR
    - Offer ONE tiny, low-pressure option (not advice, not a plan).
-4) Stop. Do not add extra filler.
+4) Stop. Do not add filler.
 
 Questions:
 - Max 1 question.
 - Never ask "How does that make you feel?".
-- Ask concrete questions like: "Which part hurts most — X or Y?" or "What happened right before that?"
+- Ask concrete questions like: "Which part hurts more — X or Y?" or "What happened right before that?"
 
 Avoid:
 - Bullet lists, step-by-step programs, motivational speeches.
 - Diagnosing, labeling, certainty about inner states.
-- Repeating "that sounds hard" every time.
+- Repeating the same empathy line every time.
 
 Safety:
 - If user expresses intent to self-harm or harm others: respond calmly, encourage reaching local emergency services or a trusted person. Keep it short, non-graphic, and caring.
@@ -238,9 +198,7 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
 
     const reply =
       completion.choices[0]?.message?.content ??
-      (langHint === "en"
-        ? "I’m here. What part of this is hitting you the hardest right now?"
-        : "Ma olen siin. Mis osa sellest lööb sind praegu kõige valusamalt?");
+      "I’m here. What part of this is hitting you the hardest right now?";
 
     // Save conversation memory
     if (lastUserMessage) {
