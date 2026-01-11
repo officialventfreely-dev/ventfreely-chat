@@ -1,3 +1,5 @@
+// FILE: ventfreely-chat/app/api/chat/route.ts
+// FULL REPLACEMENT
 
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
@@ -15,7 +17,6 @@ const PRESENCE_PENALTY = 0;
 const FREQUENCY_PENALTY = 0;
 const SUMMARY_MAX_TOKENS = 200;
 
-// Free tier limit
 const FREE_DAILY_LIMIT = 9;
 
 type UserMemoryRow = {
@@ -112,16 +113,14 @@ function utcDateYYYYMMDD(d = new Date()) {
 async function consumeFreeMessage(userId: string): Promise<{ allowed: boolean; remaining: number }> {
   const date = utcDateYYYYMMDD();
 
-  // Read existing count
   const { data: row, error: readErr } = await supabaseService
-    .from("chat_daily_usage")
+    .from("chat_daily_usage") // ✅ matches your renamed table
     .select("count")
     .eq("user_id", userId)
     .eq("date", date)
     .maybeSingle();
 
   if (readErr) {
-    // Fail safe: if usage table errors, do NOT give unlimited access.
     console.error("chat_daily_usage read error:", readErr);
     return { allowed: false, remaining: 0 };
   }
@@ -164,19 +163,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No messages provided" }, { status: 400 });
     }
 
-    // 1) Auth (Bearer or cookie) + correct Supabase client
     const { userId, supabase } = await getApiSupabase(req);
 
     if (!userId) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    // 2) Access: Premium or Free
     const access = await ensureTrialAndCheckAccess(supabase as any, userId);
     const isPremium = !!access?.hasAccess;
 
-    // 3) Free tier limit (count ONLY when user sends a message)
-    // (This endpoint is called per message, so we consume 1 unit per call.)
     let remaining: number | null = null;
 
     if (!isPremium) {
@@ -190,7 +185,6 @@ export async function POST(req: NextRequest) {
       remaining = usage.remaining;
     }
 
-    // 4) Read user_memory (RLS)
     let memory: UserMemoryRow | null = null;
     try {
       const { data, error } = await (supabase as any)
@@ -257,23 +251,21 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       })),
     ];
 
-    const completion = await openai.chat.completions.create(
-      {
-        model: MODEL,
-        messages: openAiMessages,
-        temperature: TEMPERATURE,
-        max_tokens: MAX_TOKENS,
-        top_p: TOP_P,
-        presence_penalty: PRESENCE_PENALTY,
-        frequency_punalty: FREQUENCY_PENALTY,
-      } as any
-    );
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: openAiMessages,
+      temperature: TEMPERATURE,
+      max_tokens: MAX_TOKENS,
+      top_p: TOP_P,
+      presence_penalty: PRESENCE_PENALTY,
+      frequency_penalty: FREQUENCY_PENALTY, // ✅ FIXED
+    } as any);
 
     const reply =
       completion.choices[0]?.message?.content ??
       "I’m here. What part of this is hitting you the hardest right now?";
 
-    // 5) Save conversation memory
+    // Save conversation memory (best-effort)
     if (lastUserMessage) {
       try {
         let summary: string | null = null;
@@ -333,7 +325,6 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       }
     }
 
-    // 6) Return reply + remaining
     return NextResponse.json({
       reply,
       remaining: isPremium ? null : remaining,
@@ -343,6 +334,6 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     console.error("Error in /api/chat:", err);
-    return NextResponse.json({ error: "Failed to generate reply" }, { status: 500 });
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
