@@ -30,6 +30,9 @@ const MAX_CONTEXT_MESSAGES = 14;
 // Soft abuse guard (NOT a paywall). We still return 200, just a calmer “slow down” response.
 const SOFT_DAILY_HEAVY_USAGE_THRESHOLD = 250;
 
+// ✅ Soft active window: keep conversation “alive” for a few minutes after leaving
+const SOFT_ACTIVE_WINDOW_MS = 5 * 60 * 1000; // 5 min
+
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 type UserMemoryRow = {
@@ -38,6 +41,12 @@ type UserMemoryRow = {
   preferred_tone: string | null;
   energy_pattern: string | null;
   updated_at?: string | null;
+};
+
+type ConversationPick = {
+  id: string;
+  status?: string | null;
+  last_active_at?: string | null;
 };
 
 function safeIsoToMs(iso?: string | null) {
@@ -244,6 +253,89 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
 `.trim();
 }
 
+function isStale(lastActiveIso?: string | null) {
+  const ms = safeIsoToMs(lastActiveIso ?? null);
+  if (!ms) return true;
+  return Date.now() - ms > SOFT_ACTIVE_WINDOW_MS;
+}
+
+/**
+ * ✅ Find the current active conversation.
+ * If it's stale (> window), archive it and return null (so we create a fresh one).
+ * This is "lazy auto-archive": no cron needed, happens on next chat request.
+ */
+async function getOrCreateActiveConversationId(supabase: any, userId: string): Promise<string> {
+  const nowIso = new Date().toISOString();
+
+  // 1) Get most recent active conversation
+  const { data: activeRows, error: activeErr } = await supabase
+    .from("conversations")
+    .select("id,status,last_active_at")
+    .eq("user_id", userId)
+    .eq("is_deleted", false)
+    .eq("status", "active")
+    .order("last_active_at", { ascending: false })
+    .limit(1);
+
+  if (activeErr) {
+    // If schema isn't migrated yet, fail gracefully by creating a new row via old behavior
+    // (but in practice, you'll run the SQL first).
+    console.error("conversations active read error:", activeErr);
+  }
+
+  const active = (activeRows?.[0] as ConversationPick | undefined) ?? undefined;
+
+  // 2) If we have an active conversation but it's stale, archive it
+  if (active?.id && isStale(active.last_active_at ?? null)) {
+    try {
+      await supabase
+        .from("conversations")
+        .update({
+          status: "archived",
+          archived_at: nowIso,
+          updated_at: nowIso,
+          last_active_at: nowIso,
+        })
+        .eq("id", active.id)
+        .eq("user_id", userId);
+    } catch (e) {
+      console.error("conversations archive error:", e);
+    }
+  } else if (active?.id) {
+    // 3) Active and not stale -> touch last_active_at now (so accidental leave doesn't kill it)
+    try {
+      await supabase
+        .from("conversations")
+        .update({
+          last_active_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq("id", active.id)
+        .eq("user_id", userId);
+    } catch {}
+    return active.id;
+  }
+
+  // 4) No active (or stale archived) -> create a new active conversation
+  const { data: inserted, error: insErr } = await supabase
+    .from("conversations")
+    .insert({
+      user_id: userId,
+      status: "active",
+      last_active_at: nowIso,
+    })
+    .select("id")
+    .single();
+
+  if (insErr || !inserted?.id) {
+    console.error("conversations insert error:", insErr);
+    // last resort: return a fake id (will fail update later but won't crash)
+    return "unknown";
+  }
+
+  return inserted.id as string;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -263,6 +355,9 @@ export async function POST(req: NextRequest) {
     // but in FREE_MODE (via lib/access.ts) this returns hasAccess=true.
     // We do NOT use it to block or return 402 in free-first.
     await ensureTrialAndCheckAccess(supabase as any, userId);
+
+    // ✅ Soft active window: decide which conversation this turn belongs to
+    const conversationId = await getOrCreateActiveConversationId(supabase as any, userId);
 
     // Track usage for monitoring + soft guard (never blocks)
     const usageCount = await trackDailyUsage(userId);
@@ -344,38 +439,41 @@ export async function POST(req: NextRequest) {
           summary = summaryCompletion.choices[0]?.message?.content?.trim() || null;
         }
 
-        const { data: existing } = await (supabase as any)
+        const nowIso = new Date().toISOString();
+
+        const updatePayload: Record<string, any> = {
+          // keep conversation “alive” for the soft window
+          status: "active",
+          last_active_at: nowIso,
+          updated_at: nowIso,
+
+          last_user_message: lastUserMessage,
+          last_assistant_message: reply,
+        };
+        if (summary) updatePayload.summary = summary;
+
+        // ✅ Update THIS conversation (not “latest created_at”)
+        await (supabase as any)
           .from("conversations")
-          .select("id")
-          .eq("user_id", userId)
-          .eq("is_deleted", false)
-          .order("created_at", { ascending: false })
-          .limit(1);
-
-        if (existing && existing.length > 0) {
-          const convId = existing[0].id;
-
-          const updatePayload: Record<string, any> = {
-            last_user_message: lastUserMessage,
-            last_assistant_message: reply,
-            updated_at: new Date().toISOString(),
-          };
-          if (summary) updatePayload.summary = summary;
-
-          await (supabase as any).from("conversations").update(updatePayload).eq("id", convId);
-        } else {
-          const insertPayload: Record<string, any> = {
-            user_id: userId,
-            last_user_message: lastUserMessage,
-            last_assistant_message: reply,
-          };
-          if (summary) insertPayload.summary = summary;
-
-          await (supabase as any).from("conversations").insert(insertPayload);
-        }
+          .update(updatePayload)
+          .eq("id", conversationId)
+          .eq("user_id", userId);
       } catch (e) {
         console.error("Error while updating memory:", e);
       }
+    } else {
+      // Even if no lastUserMessage somehow, still touch last_active_at
+      try {
+        await (supabase as any)
+          .from("conversations")
+          .update({
+            status: "active",
+            last_active_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", conversationId)
+          .eq("user_id", userId);
+      } catch {}
     }
 
     // FREE-FIRST response: no remaining, no paywall signals
