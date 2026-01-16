@@ -3,12 +3,33 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type AccessResult = {
-  hasAccess: boolean; // true = Premium (paid)
+  hasAccess: boolean; // true = Premium (paid) OR FREE_MODE bypass
   reason: "premium_active" | "free";
   trialEndsAt: string | null; // kept for compatibility (always null in new model)
   premiumUntil: string | null;
   status: string | null;
 };
+
+/**
+ * FREE-FIRST SWITCH
+ * - When FREE_MODE is enabled, all users have access as if Premium.
+ * - This keeps subscription/webhook architecture intact for later re-enable.
+ *
+ * How to enable:
+ *   Set environment variable:
+ *     FREE_MODE=true
+ *
+ * Notes:
+ * - We intentionally do NOT write anything to DB in free mode.
+ * - We avoid returning "free" in free mode so upstream gates won't block.
+ */
+function isFreeModeEnabled() {
+  const v =
+    process.env.FREE_MODE ??
+    process.env.NEXT_PUBLIC_FREE_MODE ?? // optional fallback if you ever mirror it (not required)
+    "";
+  return String(v).toLowerCase().trim() === "true";
+}
 
 function isFuture(iso: string | null) {
   if (!iso) return false;
@@ -56,11 +77,25 @@ async function readLatestSubscriptionRow(
  *    AND current_period_end is in the future
  * - Trial rows (status="trial", trial_ends_at) are ignored for access
  *   (they can exist in DB from older versions; doesn't matter)
+ *
+ * FREE MODE override:
+ * - If FREE_MODE=true, ALWAYS allow access (acts like Premium)
  */
 export async function ensureTrialAndCheckAccess(
   supabaseSession: SupabaseClient,
   userId: string
 ): Promise<AccessResult> {
+  // FREE MODE: everything unlocked, no DB reads required
+  if (isFreeModeEnabled()) {
+    return {
+      hasAccess: true,
+      reason: "premium_active",
+      trialEndsAt: null,
+      premiumUntil: null,
+      status: "free_mode",
+    };
+  }
+
   // Guard: never write/read with empty userId
   if (!userId) {
     return {

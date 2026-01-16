@@ -123,10 +123,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const access = await ensureTrialAndCheckAccess(supabase as any, userId);
-    if (!access.hasAccess) {
-      return NextResponse.json({ error: "premium_required" }, { status: 402 });
-    }
+    // Keep access check for future subscription re-enable.
+    // In FREE_MODE (lib/access.ts), hasAccess will be true anyway.
+    // IMPORTANT: We do not gate weekly insights anymore.
+    await ensureTrialAndCheckAccess(supabase as any, userId);
 
     // Fetch last 14 days (today and back 13)
     const today = new Date();
@@ -148,8 +148,8 @@ export async function GET(req: NextRequest) {
     const rows = ((data ?? []) as Row[]).filter((r) => !!r?.date);
 
     // Split into prev7 and last7 based on chronological order.
-    const prev7Rows = rows.slice(0, Math.max(0, rows.length - 7));
     const last7Rows = rows.slice(Math.max(0, rows.length - 7));
+    const prev7Rows = rows.slice(Math.max(0, rows.length - 14), Math.max(0, rows.length - 7));
 
     const completedDays = last7Rows.length;
     const topEmotion = pickTopEmotion(last7Rows);
@@ -159,7 +159,6 @@ export async function GET(req: NextRequest) {
       .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
 
     const prev7Scores = prev7Rows
-      .slice(-7)
       .map((r) => r.score)
       .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
 

@@ -28,7 +28,10 @@ export async function GET(req: NextRequest) {
       .eq("date", date)
       .maybeSingle();
 
-    if (error) return json(500, { error: "fetch_failed" });
+    if (error) {
+      console.error("daily/today fetch error:", error);
+      return json(500, { error: "fetch_failed" });
+    }
 
     return json(200, { date, reflection: data ?? null });
   } catch (e: any) {

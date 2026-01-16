@@ -120,9 +120,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // ✅ Access check, but we do NOT block basic weekly anymore.
+    // Keep access check for future subscription re-enable.
+    // In FREE_MODE (lib/access.ts), this returns hasAccess=true anyway.
+    // IMPORTANT: We do not gate weekly insights/suggestions anymore.
     const access = await ensureTrialAndCheckAccess(supabase as any, userId);
-    const hasPremiumInsights = !!access?.hasAccess;
+    void access;
 
     // Last 7 days (including today)
     const today = new Date();
@@ -199,12 +201,9 @@ export async function GET(req: NextRequest) {
       energy: r.energy,
     }));
 
-    // ✅ Premium-only layer
-    const insights = hasPremiumInsights
-      ? buildInsights({ completedDays, topEmotion, trend, last7Rows: typedRows })
-      : undefined;
-
-    const suggestion = hasPremiumInsights ? gentleSuggestion(trend) : undefined;
+    // FREE-FIRST: always include the premium layer (as if Premium)
+    const insights = buildInsights({ completedDays, topEmotion, trend, last7Rows: typedRows });
+    const suggestion = gentleSuggestion(trend);
 
     return NextResponse.json({
       completedDays,
@@ -213,7 +212,7 @@ export async function GET(req: NextRequest) {
       days,
       insights,
       suggestion,
-      hasPremiumInsights,
+      hasPremiumInsights: true, // always true in free-first experience
     });
   } catch (e) {
     console.error("daily/week error:", e);

@@ -101,21 +101,6 @@ function buildSoftInsights(summary: {
   return out.slice(0, 4);
 }
 
-function isAllowedAccess(access: unknown): boolean {
-  const a = access as any;
-
-  if (typeof a?.ok === "boolean") return a.ok;
-  if (typeof a?.allowed === "boolean") return a.allowed;
-  if (typeof a?.hasAccess === "boolean") return a.hasAccess;
-  if (typeof a?.premium === "boolean") return a.premium;
-  if (typeof a?.isPremium === "boolean") return a.isPremium;
-
-  const s = a?.access ?? a?.status;
-  if (s === "premium" || s === "trial" || s === "active" || s === "trialing") return true;
-
-  return false;
-}
-
 async function fetchWeek(
   supabase: any,
   userId: string,
@@ -162,11 +147,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // ✅ ühtne Premium/Trial gate
-  const access = await ensureTrialAndCheckAccess(supabase as any, userId);
-  if (!isAllowedAccess(access)) {
-    return NextResponse.json({ error: "Premium required" }, { status: 402 });
-  }
+  // Keep access check for future subscription re-enable.
+  // In FREE_MODE, this allows anyway.
+  await ensureTrialAndCheckAccess(supabase as any, userId);
 
   // This week ends today (EE date string)
   const thisEnd = getTodayEE();

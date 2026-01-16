@@ -18,9 +18,7 @@ function getSupabaseUrl(): string {
 }
 
 function getSupabaseAnonKey(): string {
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_ANON_KEY;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
   if (!key) throw new Error("Missing SUPABASE_ANON_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY in env.");
   return key;
 }
@@ -39,7 +37,7 @@ export async function getApiSupabase(req: NextRequest): Promise<{
       global: { headers: { Authorization: `Bearer ${bearer}` } },
     });
 
-    // IMPORTANT: Use getUser() without args so it reads from Authorization header (most stable across versions)
+    // IMPORTANT: Use getUser() without args so it reads from Authorization header
     const { data, error } = await supabase.auth.getUser();
     if (error || !data?.user) {
       throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
@@ -53,7 +51,7 @@ export async function getApiSupabase(req: NextRequest): Promise<{
   const { data, error } = await sb.auth.getUser();
   if (error || !data?.user) {
     throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-    }
+  }
 
   return { userId: data.user.id, user: data.user, supabase: sb };
 }

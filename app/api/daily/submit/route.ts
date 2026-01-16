@@ -29,7 +29,10 @@ export async function POST(req: NextRequest) {
     const emotion = String(body.emotion ?? "").trim();
     const energy = String(body.energy ?? "").trim();
 
+    // Light guardrails (free-first safety, no UI changes)
+    // Keep it generous so users don't feel limited.
     if (positiveText.length < 3) return json(400, { error: "positiveText too short" });
+    if (positiveText.length > 1000) return json(400, { error: "positiveText too long" });
     if (!emotion) return json(400, { error: "emotion required" });
     if (!energy) return json(400, { error: "energy required" });
 
@@ -58,10 +61,9 @@ export async function POST(req: NextRequest) {
 
     // (Optional) tiny memory touch – safe no-op if RLS/columns differ
     try {
-      await supabase.from("user_memory").upsert(
-        { user_id: userId, updated_at: new Date().toISOString() },
-        { onConflict: "user_id" }
-      );
+      await supabase
+        .from("user_memory")
+        .upsert({ user_id: userId, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
     } catch {}
 
     return json(200, { ok: true });
