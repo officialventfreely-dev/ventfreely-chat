@@ -11,27 +11,24 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 /**
  * COST + QUALITY SETTINGS (FREE-FIRST)
- * - Keep replies human + short most of the time
- * - Keep context small
- * - Avoid paywall / 402 entirely
  */
 const MODEL = "gpt-4.1-mini";
 const TEMPERATURE = 0.75;
-const MAX_TOKENS = 180; // lowered for cost control (still high-quality for Ventfreely tone)
+const MAX_TOKENS = 180;
 const TOP_P = 1;
 const PRESENCE_PENALTY = 0;
 const FREQUENCY_PENALTY = 0;
 
 const SUMMARY_MAX_TOKENS = 120;
 
-// Context trimming: send only the last N messages (plus system)
+// Context trimming
 const MAX_CONTEXT_MESSAGES = 14;
 
-// Soft abuse guard (NOT a paywall). We still return 200, just a calmer “slow down” response.
+// Soft abuse guard (NOT a paywall)
 const SOFT_DAILY_HEAVY_USAGE_THRESHOLD = 250;
 
-// ✅ Soft active window: keep conversation “alive” for a few minutes after leaving
-const SOFT_ACTIVE_WINDOW_MS = 5 * 60 * 1000; // 5 min
+// ✅ Active window for “resume”
+const ACTIVE_WINDOW_MINUTES = 5;
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -41,12 +38,6 @@ type UserMemoryRow = {
   preferred_tone: string | null;
   energy_pattern: string | null;
   updated_at?: string | null;
-};
-
-type ConversationPick = {
-  id: string;
-  status?: string | null;
-  last_active_at?: string | null;
 };
 
 function safeIsoToMs(iso?: string | null) {
@@ -137,10 +128,6 @@ function trimContext(messages: ChatMsg[]) {
   return messages.slice(messages.length - MAX_CONTEXT_MESSAGES);
 }
 
-/**
- * Track daily usage (for monitoring + soft guard), but NEVER block.
- * Uses existing table: chat_daily_usage (user_id, date, count, updated_at).
- */
 async function trackDailyUsage(userId: string): Promise<number | null> {
   const date = utcDateYYYYMMDD();
 
@@ -180,9 +167,6 @@ async function trackDailyUsage(userId: string): Promise<number | null> {
 }
 
 function isClearlyNonEnglish(text: string) {
-  // super lightweight heuristic; we keep your original rule:
-  // default English, but if user clearly writes in another language, reply in that language.
-  // (We leave detection to the model; this is only used for prompt guidance.)
   return /[äöõüšž]/i.test(text);
 }
 
@@ -194,18 +178,12 @@ function buildSystemPrompt(opts: {
 }) {
   const { memoryBlock, turnCount, heavyUsage, lastUserMessage } = opts;
 
-  const phase =
-    turnCount <= 2 ? "early" : turnCount <= 6 ? "middle" : "late";
+  const phase = turnCount <= 2 ? "early" : turnCount <= 6 ? "middle" : "late";
 
   const languageHint = isClearlyNonEnglish(lastUserMessage)
     ? "User may be writing in a non-English language. Mirror the user's language."
     : "Default to ENGLISH unless the user clearly writes in another language.";
 
-  // “Chat süsteem” = more human friend vibe:
-  // - early: more curious questions, less “that must be hard”
-  // - later: more reflection + presence
-  // - avoid therapist phrases, avoid over-validation
-  // - vary across conversation, not same template each time
   return `
 You are Ventfreely.
 
@@ -223,7 +201,7 @@ Language:
 - Don't do abstract emotional labeling. Don't dramatize. Don't lecture.
 - Show care through curiosity and specificity.
 
-Conversation phases (important):
+Conversation phases:
 - EARLY (first 1–2 assistant replies): be more curious than validating.
   Ask ONE simple, concrete question. Keep it short and natural.
 - MIDDLE: reflect ONE concrete detail, then ask ONE focused question OR offer ONE tiny option.
@@ -253,87 +231,81 @@ ${memoryBlock ? `\n${memoryBlock}\n` : ""}
 `.trim();
 }
 
-function isStale(lastActiveIso?: string | null) {
-  const ms = safeIsoToMs(lastActiveIso ?? null);
-  if (!ms) return true;
-  return Date.now() - ms > SOFT_ACTIVE_WINDOW_MS;
-}
-
-/**
- * ✅ Find the current active conversation.
- * If it's stale (> window), archive it and return null (so we create a fresh one).
- * This is "lazy auto-archive": no cron needed, happens on next chat request.
- */
-async function getOrCreateActiveConversationId(supabase: any, userId: string): Promise<string> {
+async function getOrCreateActiveConversationId(supabase: any, userId: string) {
   const nowIso = new Date().toISOString();
+  const cutoffIso = new Date(Date.now() - ACTIVE_WINDOW_MINUTES * 60 * 1000).toISOString();
 
-  // 1) Get most recent active conversation
-  const { data: activeRows, error: activeErr } = await supabase
+  // Get latest conversation (even if stale) to decide archiving
+  const { data: latest, error: latestErr } = await supabase
     .from("conversations")
-    .select("id,status,last_active_at")
+    .select("id, status, last_active_at, archived_at, is_deleted")
     .eq("user_id", userId)
     .eq("is_deleted", false)
-    .eq("status", "active")
-    .order("last_active_at", { ascending: false })
-    .limit(1);
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (activeErr) {
-    // If schema isn't migrated yet, fail gracefully by creating a new row via old behavior
-    // (but in practice, you'll run the SQL first).
-    console.error("conversations active read error:", activeErr);
+  if (latestErr) {
+    console.error("conversations latest read error:", latestErr);
   }
 
-  const active = (activeRows?.[0] as ConversationPick | undefined) ?? undefined;
+  // If latest is active but stale -> archive it
+  if (latest?.id && latest.status === "active") {
+    const lastActive = latest.last_active_at ? new Date(latest.last_active_at).getTime() : 0;
+    const isStale = !lastActive || lastActive < Date.now() - ACTIVE_WINDOW_MINUTES * 60 * 1000;
 
-  // 2) If we have an active conversation but it's stale, archive it
-  if (active?.id && isStale(active.last_active_at ?? null)) {
-    try {
-      await supabase
+    if (isStale) {
+      const { error: archErr } = await supabase
         .from("conversations")
         .update({
           status: "archived",
           archived_at: nowIso,
           updated_at: nowIso,
-          last_active_at: nowIso,
         })
-        .eq("id", active.id)
+        .eq("id", latest.id)
         .eq("user_id", userId);
-    } catch (e) {
-      console.error("conversations archive error:", e);
+
+      if (archErr) console.error("conversations archive error:", archErr);
     }
-  } else if (active?.id) {
-    // 3) Active and not stale -> touch last_active_at now (so accidental leave doesn't kill it)
-    try {
-      await supabase
-        .from("conversations")
-        .update({
-          last_active_at: nowIso,
-          updated_at: nowIso,
-        })
-        .eq("id", active.id)
-        .eq("user_id", userId);
-    } catch {}
-    return active.id;
   }
 
-  // 4) No active (or stale archived) -> create a new active conversation
-  const { data: inserted, error: insErr } = await supabase
+  // Find an active conversation within window
+  const { data: active, error: activeErr } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("is_deleted", false)
+    .eq("status", "active")
+    .is("archived_at", null)
+    .gte("last_active_at", cutoffIso)
+    .order("last_active_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (activeErr) {
+    console.error("conversations active read error:", activeErr);
+  }
+
+  if (active?.id) return active.id as string;
+
+  // Create new active conversation
+  const { data: created, error: createErr } = await supabase
     .from("conversations")
     .insert({
       user_id: userId,
       status: "active",
       last_active_at: nowIso,
+      archived_at: null,
     })
     .select("id")
     .single();
 
-  if (insErr || !inserted?.id) {
-    console.error("conversations insert error:", insErr);
-    // last resort: return a fake id (will fail update later but won't crash)
-    return "unknown";
+  if (createErr || !created?.id) {
+    console.error("conversations create error:", createErr);
+    throw new Error("Failed to create conversation");
   }
 
-  return inserted.id as string;
+  return created.id as string;
 }
 
 export async function POST(req: NextRequest) {
@@ -351,20 +323,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    // Access check remains for future subscription re-enable,
-    // but in FREE_MODE (via lib/access.ts) this returns hasAccess=true.
-    // We do NOT use it to block or return 402 in free-first.
+    // Free-first access: never 402
     await ensureTrialAndCheckAccess(supabase as any, userId);
 
-    // ✅ Soft active window: decide which conversation this turn belongs to
-    const conversationId = await getOrCreateActiveConversationId(supabase as any, userId);
-
-    // Track usage for monitoring + soft guard (never blocks)
+    // Track usage (never blocks)
     const usageCount = await trackDailyUsage(userId);
     const heavyUsage =
       typeof usageCount === "number" && usageCount >= SOFT_DAILY_HEAVY_USAGE_THRESHOLD;
 
-    // Read user memory (best-effort)
+    // Read memory (best-effort)
     let memory: UserMemoryRow | null = null;
     try {
       const { data, error } = await (supabase as any)
@@ -378,9 +345,9 @@ export async function POST(req: NextRequest) {
     const lastUserMessage = getLastUserText(rawMessages);
     const memoryBlock = buildMemoryBlock(memory);
 
-    // Trim context to reduce cost
     const messages = trimContext(rawMessages);
     const userTurns = messages.filter((m) => m.role === "user").length;
+
     const systemPrompt = buildSystemPrompt({
       memoryBlock,
       turnCount: userTurns,
@@ -396,6 +363,24 @@ export async function POST(req: NextRequest) {
       })),
     ];
 
+    // ✅ Ensure active conversation id (5-min resume)
+    const convId = await getOrCreateActiveConversationId(supabase as any, userId);
+
+    // ✅ Save the new USER message immediately (so if net drops after, we still have it)
+    const nowIso = new Date().toISOString();
+    if (lastUserMessage?.trim()) {
+      const { error: insUserErr } = await (supabase as any)
+        .from("conversation_messages")
+        .insert({
+          conversation_id: convId,
+          user_id: userId,
+          role: "user",
+          content: lastUserMessage,
+        });
+
+      if (insUserErr) console.error("conversation_messages insert user error:", insUserErr);
+    }
+
     const completion = await openai.chat.completions.create({
       model: MODEL,
       messages: openAiMessages,
@@ -410,73 +395,70 @@ export async function POST(req: NextRequest) {
       completion.choices[0]?.message?.content?.trim() ||
       "What happened right before it started feeling like this?";
 
-    // Save conversation memory (best-effort)
-    // To control cost, only summarize occasionally (when conversation has some length).
-    if (lastUserMessage) {
-      try {
-        let summary: string | null = null;
+    // ✅ Save ASSISTANT message
+    {
+      const { error: insAsstErr } = await (supabase as any)
+        .from("conversation_messages")
+        .insert({
+          conversation_id: convId,
+          user_id: userId,
+          role: "assistant",
+          content: reply,
+        });
 
-        // Summarize only if we have enough turns AND not too often.
-        // (Heuristic: every ~8+ total messages)
-        if (rawMessages.length >= 8) {
-          const summaryMessages = [
-            {
-              role: "system" as const,
-              content:
-                "Summarize this conversation in 2–3 short sentences. Focus on what the user is dealing with and what matters right now. Neutral, no advice.",
-            },
-            ...openAiMessages.slice(1),
-            { role: "assistant" as const, content: reply },
-          ];
-
-          const summaryCompletion = await openai.chat.completions.create({
-            model: MODEL,
-            messages: summaryMessages,
-            temperature: 0.35,
-            max_tokens: SUMMARY_MAX_TOKENS,
-          });
-
-          summary = summaryCompletion.choices[0]?.message?.content?.trim() || null;
-        }
-
-        const nowIso = new Date().toISOString();
-
-        const updatePayload: Record<string, any> = {
-          // keep conversation “alive” for the soft window
-          status: "active",
-          last_active_at: nowIso,
-          updated_at: nowIso,
-
-          last_user_message: lastUserMessage,
-          last_assistant_message: reply,
-        };
-        if (summary) updatePayload.summary = summary;
-
-        // ✅ Update THIS conversation (not “latest created_at”)
-        await (supabase as any)
-          .from("conversations")
-          .update(updatePayload)
-          .eq("id", conversationId)
-          .eq("user_id", userId);
-      } catch (e) {
-        console.error("Error while updating memory:", e);
-      }
-    } else {
-      // Even if no lastUserMessage somehow, still touch last_active_at
-      try {
-        await (supabase as any)
-          .from("conversations")
-          .update({
-            status: "active",
-            last_active_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", conversationId)
-          .eq("user_id", userId);
-      } catch {}
+      if (insAsstErr) console.error("conversation_messages insert assistant error:", insAsstErr);
     }
 
-    // FREE-FIRST response: no remaining, no paywall signals
+    // Summary (best-effort, occasional)
+    let summary: string | null = null;
+    try {
+      if (rawMessages.length >= 8) {
+        const summaryMessages = [
+          {
+            role: "system" as const,
+            content:
+              "Summarize this conversation in 2–3 short sentences. Focus on what the user is dealing with and what matters right now. Neutral, no advice.",
+          },
+          ...openAiMessages.slice(1),
+          { role: "assistant" as const, content: reply },
+        ];
+
+        const summaryCompletion = await openai.chat.completions.create({
+          model: MODEL,
+          messages: summaryMessages,
+          temperature: 0.35,
+          max_tokens: SUMMARY_MAX_TOKENS,
+        });
+
+        summary = summaryCompletion.choices[0]?.message?.content?.trim() || null;
+      }
+    } catch {
+      summary = null;
+    }
+
+    // ✅ Update conversation row (active heartbeat + last messages + optional summary)
+    try {
+      const updatePayload: Record<string, any> = {
+        last_user_message: lastUserMessage,
+        last_assistant_message: reply,
+        last_active_at: nowIso,
+        status: "active",
+        archived_at: null,
+        updated_at: nowIso,
+      };
+      if (summary) updatePayload.summary = summary;
+
+      const { error: updErr } = await (supabase as any)
+        .from("conversations")
+        .update(updatePayload)
+        .eq("id", convId)
+        .eq("user_id", userId);
+
+      if (updErr) console.error("conversations update error:", updErr);
+    } catch (e) {
+      console.error("conversations update exception:", e);
+    }
+
     return NextResponse.json({ reply });
   } catch (err: any) {
     if (err?.status === 401) {
