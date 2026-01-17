@@ -5,19 +5,36 @@ import { getApiSupabase } from "@/lib/apiAuth";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
 
 type Trend = "up" | "flat" | "down" | "na";
+type SlotPart = "AM" | "PM";
 
-type DayRow = {
-  date: string; // YYYY-MM-DD
+const USER_TZ = "Europe/Tallinn";
+
+type Row = {
+  date: string; // YYYY-MM-DD (stored)
   emotion: string | null;
   energy: string | null;
   score?: number | null;
+  created_at?: string | null; // timestamptz
+  positive_text?: string | null;
 };
 
-type PrevRow = {
-  date: string; // YYYY-MM-DD
+type Slot = {
+  id: string; // `${date}__${part}`
+  date: string; // YYYY-MM-DD (Tallinn local)
+  part: SlotPart;
+  done: boolean;
   emotion: string | null;
   energy: string | null;
-  score?: number | null;
+  positive_text?: string | null;
+  created_at?: string | null;
+};
+
+type Day = {
+  date: string;
+  done: boolean;
+  emotion: string | null;
+  energy: string | null;
+  positive_text?: string | null;
 };
 
 function safeLower(s: string | null | undefined) {
@@ -52,12 +69,7 @@ function pickTopEmotion(rows: { emotion: string | null }[]) {
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
-function buildInsights(params: {
-  completedDays: number;
-  topEmotion: string | null;
-  trend: Trend;
-  last7Rows: DayRow[];
-}): string[] {
+function buildInsights(params: { completedDays: number; topEmotion: string | null; trend: Trend; last7Rows: Row[] }): string[] {
   const { completedDays, topEmotion, trend, last7Rows } = params;
   const insights: string[] = [];
 
@@ -112,6 +124,76 @@ function gentleSuggestion(trend: Trend) {
   return "If you want, give it one quiet check-in this week. No pressure — just a little space.";
 }
 
+function makeSlotId(date: string, part: SlotPart) {
+  return `${date}__${part}`;
+}
+
+function ymdInTz(d: Date) {
+  // en-CA gives YYYY-MM-DD ordering reliably
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: USER_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function hourInTz(d: Date) {
+  // returns 0..23 in USER_TZ
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: USER_TZ,
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+
+  const h = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const n = Number(h);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function partInTz(d: Date): SlotPart {
+  return hourInTz(d) < 12 ? "AM" : "PM";
+}
+
+function buildLast14Windows(now = new Date()): { date: string; part: SlotPart; id: string }[] {
+  // Build 14 windows by stepping 12h back from now.
+  // Date+part are computed in Europe/Tallinn, so labels stay correct for the app.
+  const out: { date: string; part: SlotPart; id: string }[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const t = new Date(now.getTime() - i * 12 * 60 * 60 * 1000);
+    const date = ymdInTz(t);
+    const part = partInTz(t);
+    out.push({ date, part, id: makeSlotId(date, part) });
+  }
+
+  // De-dupe in the rare case DST/time alignment causes duplicates:
+  // keep order, but ensure length stays 14 by refilling forward if needed.
+  const seen = new Set<string>();
+  const deduped: typeof out = [];
+  for (const w of out) {
+    if (seen.has(w.id)) continue;
+    seen.add(w.id);
+    deduped.push(w);
+  }
+
+  // If dedupe shortened, extend forward (still 12h steps) until we have 14
+  let step = 1;
+  while (deduped.length < 14) {
+    const t = new Date(now.getTime() + step * 12 * 60 * 60 * 1000);
+    const date = ymdInTz(t);
+    const part = partInTz(t);
+    const id = makeSlotId(date, part);
+    if (!seen.has(id)) {
+      seen.add(id);
+      deduped.push({ date, part, id });
+    }
+    step++;
+    if (step > 10) break;
+  }
+
+  return deduped.slice(0, 14);
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { userId, supabase } = await getApiSupabase(req);
@@ -121,58 +203,153 @@ export async function GET(req: NextRequest) {
     }
 
     // Keep access check for future subscription re-enable.
-    // In FREE_MODE (lib/access.ts), this returns hasAccess=true anyway.
-    // IMPORTANT: We do not gate weekly insights/suggestions anymore.
     const access = await ensureTrialAndCheckAccess(supabase as any, userId);
     void access;
 
-    // Last 7 days (including today)
-    const today = new Date();
-    const start = new Date();
-    start.setDate(today.getDate() - 6);
+    const now = new Date();
 
-    const startStr = start.toISOString().slice(0, 10);
-    const endStr = today.toISOString().slice(0, 10);
+    // We fetch a bit wider than 7 days to be safe (and cover 14 windows)
+    const since = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
 
     const { data: rows, error } = await supabase
       .from("daily_reflections")
-      .select("date, emotion, energy, score")
+      .select("date, emotion, energy, score, created_at, positive_text")
       .eq("user_id", userId)
-      .gte("date", startStr)
-      .lte("date", endStr)
-      .order("date", { ascending: true });
+      .gte("created_at", since.toISOString())
+      .order("created_at", { ascending: true });
 
     if (error) {
       console.error("daily/week fetch error:", error);
       return NextResponse.json({ error: "fetch_failed" }, { status: 500 });
     }
 
-    const typedRows = (rows || []) as DayRow[];
-    const completedDays = typedRows.length;
-    const topEmotion = pickTopEmotion(typedRows);
+    const typedRows = (rows || []) as Row[];
 
-    // Previous 7 days (for trend compare)
-    const prevStart = new Date(start);
-    prevStart.setDate(prevStart.getDate() - 7);
-    const prevEnd = new Date(start);
-    prevEnd.setDate(prevEnd.getDate() - 1);
+    // Build the 14 windows keys we will return (Tallinn-based labels)
+    const windows = buildLast14Windows(now);
 
-    const prevStartStr = prevStart.toISOString().slice(0, 10);
-    const prevEndStr = prevEnd.toISOString().slice(0, 10);
+    // Bucket actual DB rows into AM/PM slots by created_at in USER_TZ
+    const slotMap = new Map<string, Slot>();
+
+    for (const r of typedRows) {
+      const created = r.created_at ? new Date(r.created_at) : null;
+      if (!created || Number.isNaN(created.getTime())) continue;
+
+      const date = ymdInTz(created);
+      const part = partInTz(created);
+      const id = makeSlotId(date, part);
+
+      // Only keep rows that are in our 14 windows set
+      // (otherwise old data could fill random slots)
+      // We'll check this later by presence in windows list.
+      const existing = slotMap.get(id);
+
+      // Keep the latest row in that slot (by created_at)
+      if (!existing) {
+        slotMap.set(id, {
+          id,
+          date,
+          part,
+          done: true,
+          emotion: r.emotion ?? null,
+          energy: r.energy ?? null,
+          positive_text: r.positive_text ?? null,
+          created_at: r.created_at ?? null,
+        });
+      } else {
+        const prevTime = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+        const curTime = r.created_at ? new Date(r.created_at).getTime() : 0;
+        if (curTime >= prevTime) {
+          slotMap.set(id, {
+            ...existing,
+            done: true,
+            emotion: r.emotion ?? existing.emotion ?? null,
+            energy: r.energy ?? existing.energy ?? null,
+            positive_text: r.positive_text ?? existing.positive_text ?? null,
+            created_at: r.created_at ?? existing.created_at ?? null,
+          });
+        }
+      }
+    }
+
+    // Final slots list in correct order (oldest -> newest)
+    const slots: Slot[] = windows.map((w) => {
+      const hit = slotMap.get(w.id);
+      if (hit) return hit;
+      return {
+        id: w.id,
+        date: w.date,
+        part: w.part,
+        done: false,
+        emotion: null,
+        energy: null,
+        positive_text: null,
+        created_at: null,
+      };
+    });
+
+    // Build days[] for backwards compatibility (done if any slot done)
+    const dayMap = new Map<string, Day>();
+
+    for (const s of slots) {
+      const existing = dayMap.get(s.date);
+      if (!existing) {
+        dayMap.set(s.date, {
+          date: s.date,
+          done: !!s.done,
+          emotion: s.emotion ?? null,
+          energy: s.energy ?? null,
+          positive_text: s.positive_text ?? null,
+        });
+      } else {
+        // done if any slot done
+        const mergedDone = existing.done || s.done;
+
+        // keep latest available details preference: PM overrides AM if both present,
+        // or keep existing if new is empty
+        const prefer = (existingPart: SlotPart, incomingPart: SlotPart) =>
+          existingPart === "PM" ? "existing" : incomingPart === "PM" ? "incoming" : "existing";
+
+        // We don’t store part on day, so do a light heuristic:
+        // If incoming slot has content, prefer it.
+        const takeIncoming = !!(s.emotion || s.energy || s.positive_text);
+
+        dayMap.set(s.date, {
+          date: s.date,
+          done: mergedDone,
+          emotion: takeIncoming ? (s.emotion ?? existing.emotion ?? null) : existing.emotion ?? s.emotion ?? null,
+          energy: takeIncoming ? (s.energy ?? existing.energy ?? null) : existing.energy ?? s.energy ?? null,
+          positive_text: takeIncoming ? (s.positive_text ?? existing.positive_text ?? null) : existing.positive_text ?? s.positive_text ?? null,
+        });
+      }
+    }
+
+    const days = Array.from(dayMap.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    // Trend calculation still uses "per day" rows, but we use the most recent 7 days worth
+    // from dayMap to keep behavior stable.
+    const last7Days = days.slice(-7);
+
+    const completedDays = last7Days.filter((d) => d.done).length;
+    const topEmotion = pickTopEmotion(last7Days);
+
+    // Previous 7 days trend compare: fetch using created_at (wider but safe)
+    const prevSince = new Date(since.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const prevUntil = since;
 
     const { data: prevRows, error: prevError } = await supabase
       .from("daily_reflections")
-      .select("date, emotion, energy, score")
+      .select("date, emotion, energy, score, created_at")
       .eq("user_id", userId)
-      .gte("date", prevStartStr)
-      .lte("date", prevEndStr)
-      .order("date", { ascending: true });
+      .gte("created_at", prevSince.toISOString())
+      .lt("created_at", prevUntil.toISOString())
+      .order("created_at", { ascending: true });
 
     if (prevError) {
       console.error("daily/week prev fetch error:", prevError);
     }
 
-    const typedPrev = (prevRows || []) as PrevRow[];
+    const typedPrev = ((prevRows || []) as Row[]) ?? [];
 
     const last7Scores = typedRows
       .map((r) => (typeof r.score === "number" && Number.isFinite(r.score) ? r.score : null))
@@ -185,7 +362,7 @@ export async function GET(req: NextRequest) {
     const fallbackLast =
       last7Scores.length > 0
         ? last7Scores
-        : typedRows.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
+        : last7Days.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
 
     const fallbackPrev =
       prev7Scores.length > 0
@@ -193,13 +370,6 @@ export async function GET(req: NextRequest) {
         : typedPrev.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
 
     const trend = computeTrendFromTwoWeeks(fallbackLast, fallbackPrev);
-
-    const days = typedRows.map((r) => ({
-      date: r.date,
-      done: true,
-      emotion: r.emotion,
-      energy: r.energy,
-    }));
 
     // FREE-FIRST: always include the premium layer (as if Premium)
     const insights = buildInsights({ completedDays, topEmotion, trend, last7Rows: typedRows });
@@ -209,10 +379,13 @@ export async function GET(req: NextRequest) {
       completedDays,
       topEmotion,
       trend,
+      // backwards compat:
       days,
+      // ✅ NEW: 14x 12h windows
+      slots,
       insights,
       suggestion,
-      hasPremiumInsights: true, // always true in free-first experience
+      hasPremiumInsights: true,
     });
   } catch (e) {
     console.error("daily/week error:", e);
