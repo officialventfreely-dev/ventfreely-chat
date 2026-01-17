@@ -9,17 +9,28 @@ function json(status: number, payload: any) {
   return NextResponse.json(payload, { status });
 }
 
+function getTallinnYMD() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Tallinn",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const y = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const m = parts.find((p) => p.type === "month")?.value ?? "01";
+  const d = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${y}-${m}-${d}`;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { userId, supabase } = await getApiSupabase(req);
 
     if (!userId) return json(401, { error: "unauthorized" });
 
-    const today = new Date();
-    const yyyy = today.getUTCFullYear();
-    const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
-    const dd = String(today.getUTCDate()).padStart(2, "0");
-    const date = `${yyyy}-${mm}-${dd}`;
+    // ✅ IMPORTANT: use Tallinn-local date (not UTC)
+    const date = getTallinnYMD();
 
     const { data, error } = await supabase
       .from("daily_reflections")
