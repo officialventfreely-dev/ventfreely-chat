@@ -1,9 +1,11 @@
 // File: app/api/daily/submit/route.ts
 // FULL REPLACEMENT
 //
-// Fix: Daily not saving from mobile due to RLS/auth context mismatch.
-// Solution: use service-role client for writes, keep auth only for identifying user.
-// Also: enforce 1x / 24h window (within 24h -> update same slot/date).
+// ✅ Daily save uses the SAME "today" as /daily/today and /daily/week:
+// - Tallinn date comes from Postgres (timezone('Europe/Tallinn', now())::date)
+// - Service-role writes (bypass RLS) + auth only to identify user
+// - No dependency on updated_at or unique constraints
+// - Better error diagnostics (stage + date + userId)
 
 import { NextRequest, NextResponse } from "next/server";
 import { getApiSupabase } from "@/lib/apiAuth";
@@ -12,7 +14,6 @@ import { supabaseService } from "@/lib/supabaseService";
 export const dynamic = "force-dynamic";
 
 type Body = {
-  // accept both (mobile/web compatibility)
   positiveText?: string;
   positive_text?: string;
   emotion?: string;
@@ -23,26 +24,19 @@ function json(status: number, payload: any) {
   return NextResponse.json(payload, { status });
 }
 
-function formatTallinnDate(d: Date) {
-  // YYYY-MM-DD in Europe/Tallinn (stable + correct for user)
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Tallinn",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(d);
+async function getTallinnYmdFromPostgres(supabase: any) {
+  const { data, error } = await supabase.rpc("vent_today_tallinn");
+  if (error) throw new Error(error.message);
 
-  const y = parts.find((p) => p.type === "year")?.value ?? "1970";
-  const m = parts.find((p) => p.type === "month")?.value ?? "01";
-  const day = parts.find((p) => p.type === "day")?.value ?? "01";
-  return `${y}-${m}-${day}`;
+  const ymd = String(data ?? "").slice(0, 10);
+  if (!ymd || ymd.length !== 10) throw new Error("invalid_today_date");
+  return ymd;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // We only use this to identify the user (works for both cookie + bearer)
-    const { userId } = await getApiSupabase(req);
-
+    // identify user (bearer or cookie)
+    const { userId, supabase } = await getApiSupabase(req);
     if (!userId) return json(401, { error: "unauthorized" });
 
     const body = (await req.json().catch(() => ({}))) as Body;
@@ -51,71 +45,74 @@ export async function POST(req: NextRequest) {
     const emotion = String(body.emotion ?? "").trim();
     const energy = String(body.energy ?? "").trim();
 
-    // generous guardrails (same idea as before)
     if (positiveText.length < 3) return json(400, { error: "positiveText too short" });
     if (positiveText.length > 1000) return json(400, { error: "positiveText too long" });
     if (!emotion) return json(400, { error: "emotion required" });
     if (!energy) return json(400, { error: "energy required" });
 
-    // 1x / 24h: if user has a reflection created in the last 24h,
-    // we update that same "slot" (same date) instead of creating a new one.
-    const now = new Date();
-    const nowIso = now.toISOString();
+    // ✅ ONE source of truth: Tallinn "today" from Postgres
+    const targetDate = await getTallinnYmdFromPostgres(supabase);
 
-    let targetDate = formatTallinnDate(now);
-    let reusedWithin24h = false;
-
-    const { data: lastRow, error: lastErr } = await supabaseService
+    // 1) Check if today's row exists
+    const { data: existing, error: existErr } = await supabaseService
       .from("daily_reflections")
-      .select("date, created_at")
+      .select("id")
       .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
+      .eq("date", targetDate)
       .maybeSingle();
 
-    if (!lastErr && lastRow?.created_at) {
-      const lastCreatedAt = new Date(lastRow.created_at);
-      const diffMs = now.getTime() - lastCreatedAt.getTime();
-      const within24h = diffMs >= 0 && diffMs < 24 * 60 * 60 * 1000;
-
-      if (within24h && lastRow.date) {
-        targetDate = String(lastRow.date);
-        reusedWithin24h = true;
-      }
+    if (existErr) {
+      return json(500, {
+        error: existErr.message,
+        stage: "select_existing",
+        userId,
+        date: targetDate,
+      });
     }
 
-    // ✅ WRITE via service role (bypasses RLS issues from mobile bearer context)
-    const { error: upsertErr } = await supabaseService
-      .from("daily_reflections")
-      .upsert(
-        {
-          user_id: userId,
-          date: targetDate,
+    if (existing?.id) {
+      // 2a) Update existing
+      const { error: updErr } = await supabaseService
+        .from("daily_reflections")
+        .update({
           positive_text: positiveText,
           emotion,
           energy,
-          updated_at: nowIso,
-        },
-        { onConflict: "user_id,date" }
-      );
+        })
+        .eq("id", existing.id);
 
-    if (upsertErr) {
-      return json(500, { error: upsertErr.message });
+      if (updErr) {
+        return json(500, {
+          error: updErr.message,
+          stage: "update_existing",
+          userId,
+          date: targetDate,
+        });
+      }
+
+      return json(200, { ok: true, date: targetDate, mode: "updated" });
     }
 
-    // optional lightweight touch
-    try {
-      await supabaseService
-        .from("user_memory")
-        .upsert({ user_id: userId, updated_at: nowIso }, { onConflict: "user_id" });
-    } catch {}
-
-    return json(200, {
-      ok: true,
+    // 2b) Insert new
+    const { error: insErr } = await supabaseService.from("daily_reflections").insert({
+      user_id: userId,
       date: targetDate,
-      reused: reusedWithin24h, // UI can ignore
+      positive_text: positiveText,
+      emotion,
+      energy,
     });
+
+    if (insErr) {
+      return json(500, {
+        error: insErr.message,
+        stage: "insert_new",
+        userId,
+        date: targetDate,
+      });
+    }
+
+    return json(200, { ok: true, date: targetDate, mode: "inserted" });
   } catch (e: any) {
-    return json(500, { error: e?.message ?? "server_error" });
+    return json(500, { error: e?.message ?? "server_error", stage: "unknown" });
   }
 }

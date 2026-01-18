@@ -1,21 +1,17 @@
 // File: app/api/daily/week/route.ts
 // FULL REPLACEMENT
 //
-// Fix:
-// - Weekly dots were computed from created_at + 12h slots -> timezone/RLS mismatch => missing dots.
-// - Restore SIMPLE 1x/24h logic: "days" are Tallinn dates; done=true if row exists for that date.
-// - Use service-role for reads to avoid mobile bearer/RLS issues (same root cause as submit not saving).
-//
-// Response stays compatible: completedDays, topEmotion, trend, days, insights, suggestion.
+// ✅ Production-correct weekly summary:
+// - Dates come from Postgres (Tallinn-local) via RPC (no Intl/timezone surprises)
+// - done=true if a row exists for that Tallinn date
+// - Reads via authed supabase (RLS-safe). (If you want service-role reads, say so.)
+// - Response shape unchanged: completedDays, topEmotion, trend, days, insights, suggestion.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getApiSupabase } from "@/lib/apiAuth";
 import { ensureTrialAndCheckAccess } from "@/lib/access";
-import { supabaseService } from "@/lib/supabaseService";
 
 type Trend = "up" | "flat" | "down" | "na";
-
-const USER_TZ = "Europe/Tallinn";
 
 type Row = {
   date: string; // YYYY-MM-DD (stored)
@@ -121,38 +117,27 @@ function gentleSuggestion(trend: Trend) {
   return "If you want, give it one quiet check-in this week. No pressure — just a little space.";
 }
 
-function ymdInTz(d: Date) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: USER_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+async function getLast7Tallinn(supabase: any): Promise<string[]> {
+  const { data, error } = await supabase.rpc("vent_last7_tallinn");
+  if (error) throw new Error(error.message);
+  const arr = Array.isArray(data) ? data.map((x) => String(x).slice(0, 10)) : [];
+  if (arr.length !== 7) throw new Error("invalid_last7_dates");
+  return arr;
 }
 
-function addDays(date: Date, days: number) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-function buildLast7DatesTallinn(now = new Date()) {
-  // oldest -> newest, all as YYYY-MM-DD in Tallinn
-  const out: string[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const t = addDays(now, -i);
-    out.push(ymdInTz(t));
-  }
-  return out;
+async function getPrev7Tallinn(supabase: any): Promise<string[]> {
+  const { data, error } = await supabase.rpc("vent_prev7_tallinn");
+  if (error) throw new Error(error.message);
+  const arr = Array.isArray(data) ? data.map((x) => String(x).slice(0, 10)) : [];
+  if (arr.length !== 7) throw new Error("invalid_prev7_dates");
+  return arr;
 }
 
 export async function GET(req: NextRequest) {
   try {
     const { userId, supabase } = await getApiSupabase(req);
 
-    if (!userId) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
+    if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
     // keep for future re-enable, no UX effect now
     try {
@@ -160,14 +145,11 @@ export async function GET(req: NextRequest) {
       void access;
     } catch {}
 
-    const now = new Date();
-
-    const last7Dates = buildLast7DatesTallinn(now);
+    const last7Dates = await getLast7Tallinn(supabase);
     const startDate = last7Dates[0];
     const endDate = last7Dates[last7Dates.length - 1];
 
-    // ✅ Read via service-role to avoid RLS/mobile bearer mismatch
-    const { data: rows, error } = await supabaseService
+    const { data: rows, error } = await supabase
       .from("daily_reflections")
       .select("date, emotion, energy, score, created_at, positive_text")
       .eq("user_id", userId)
@@ -182,9 +164,7 @@ export async function GET(req: NextRequest) {
 
     const typedRows = (rows || []) as Row[];
 
-    // map by date (if multiple rows somehow exist, keep latest by created_at)
     const byDate = new Map<string, Row>();
-
     for (const r of typedRows) {
       const key = String(r.date);
       const prev = byDate.get(key);
@@ -192,7 +172,6 @@ export async function GET(req: NextRequest) {
         byDate.set(key, r);
         continue;
       }
-
       const prevT = prev.created_at ? new Date(prev.created_at).getTime() : 0;
       const curT = r.created_at ? new Date(r.created_at).getTime() : 0;
       if (curT >= prevT) byDate.set(key, r);
@@ -213,52 +192,45 @@ export async function GET(req: NextRequest) {
     const completedDays = last7DoneRows.length;
     const topEmotion = pickTopEmotion(last7DoneRows);
 
-    // Trend compare: previous 7 days (date-based, same TZ semantics)
-    const prevEnd = addDays(now, -7);
-    const prevDates: string[] = [];
-    for (let i = 13; i >= 7; i--) {
-      prevDates.push(ymdInTz(addDays(now, -i)));
+    // Prev 7 for trend
+    let trend: Trend = "na";
+    try {
+      const prev7Dates = await getPrev7Tallinn(supabase);
+      const prevStart = prev7Dates[0];
+      const prevEnd = prev7Dates[prev7Dates.length - 1];
+
+      const { data: prevRows, error: prevError } = await supabase
+        .from("daily_reflections")
+        .select("date, emotion, energy, score")
+        .eq("user_id", userId)
+        .gte("date", prevStart)
+        .lte("date", prevEnd);
+
+      if (prevError) console.error("daily/week prev fetch error:", prevError);
+
+      const typedPrev = ((prevRows || []) as Row[]) ?? [];
+
+      const last7Scores = typedRows
+        .map((r) => (typeof r.score === "number" && Number.isFinite(r.score) ? r.score : null))
+        .filter((v): v is number => typeof v === "number");
+
+      const prev7Scores = typedPrev
+        .map((r) => (typeof r.score === "number" && Number.isFinite(r.score) ? r.score : null))
+        .filter((v): v is number => typeof v === "number");
+
+      const fallbackLast = last7Scores.length > 0 ? last7Scores : last7DoneRows.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
+      const fallbackPrev = prev7Scores.length > 0 ? prev7Scores : typedPrev.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
+
+      trend = computeTrendFromTwoWeeks(fallbackLast, fallbackPrev);
+    } catch {
+      trend = "na";
     }
-    const prevStartDate = prevDates[0];
-    const prevEndDate = prevDates[prevDates.length - 1];
-
-    const { data: prevRows, error: prevError } = await supabaseService
-      .from("daily_reflections")
-      .select("date, emotion, energy, score, created_at")
-      .eq("user_id", userId)
-      .gte("date", prevStartDate)
-      .lte("date", prevEndDate)
-      .order("date", { ascending: true });
-
-    if (prevError) {
-      console.error("daily/week prev fetch error:", prevError);
-    }
-
-    const typedPrev = ((prevRows || []) as Row[]) ?? [];
-
-    const last7Scores = typedRows
-      .filter((r) => last7Dates.includes(String(r.date)))
-      .map((r) => (typeof r.score === "number" && Number.isFinite(r.score) ? r.score : null))
-      .filter((v): v is number => typeof v === "number");
-
-    const prev7Scores = typedPrev
-      .map((r) => (typeof r.score === "number" && Number.isFinite(r.score) ? r.score : null))
-      .filter((v): v is number => typeof v === "number");
-
-    // fallback if score missing
-    const fallbackLast =
-      last7Scores.length > 0 ? last7Scores : last7DoneRows.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
-
-    const fallbackPrev =
-      prev7Scores.length > 0 ? prev7Scores : typedPrev.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
-
-    const trend = computeTrendFromTwoWeeks(fallbackLast, fallbackPrev);
 
     const insights = buildInsights({
       completedDays,
       topEmotion,
       trend,
-      last7Rows: typedRows.filter((r) => last7Dates.includes(String(r.date))),
+      last7Rows: typedRows,
     });
 
     const suggestion = gentleSuggestion(trend);
@@ -267,7 +239,7 @@ export async function GET(req: NextRequest) {
       completedDays,
       topEmotion,
       trend,
-      days, // ✅ This is what your weekly dots should use
+      days,
       insights,
       suggestion,
       hasPremiumInsights: true,

@@ -1,4 +1,10 @@
 // File: lib/apiAuth.ts
+// FULL REPLACEMENT
+//
+// ✅ Production-correct API auth for BOTH web + native:
+// - Native: Authorization Bearer token -> getUser(bearer) (robust, does not depend on header propagation)
+// - Web: cookie session via supabaseServer()
+// - Returns { userId, user, supabase } where supabase is RLS-safe authed client
 
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
@@ -12,13 +18,13 @@ export function getBearerToken(req: NextRequest): string | null {
 }
 
 function getSupabaseUrl(): string {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!url) throw new Error("Missing SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL in env.");
   return url;
 }
 
 function getSupabaseAnonKey(): string {
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!key) throw new Error("Missing SUPABASE_ANON_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY in env.");
   return key;
 }
@@ -30,15 +36,24 @@ export async function getApiSupabase(req: NextRequest): Promise<{
 }> {
   const bearer = getBearerToken(req);
 
-  // Mobile app: Bearer token (RLS-safe)
+  // Native app: Bearer token
   if (bearer) {
-    const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${bearer}` } },
+    const url = getSupabaseUrl();
+    const anon = getSupabaseAnonKey();
+
+    // RLS-safe client; we attach both apikey + Authorization
+    const supabase = createClient(url, anon, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: {
+        headers: {
+          apikey: anon,
+          Authorization: `Bearer ${bearer}`,
+        },
+      },
     });
 
-    // IMPORTANT: Use getUser() without args so it reads from Authorization header
-    const { data, error } = await supabase.auth.getUser();
+    // ✅ Most robust: pass token directly (avoids any header propagation weirdness)
+    const { data, error } = await supabase.auth.getUser(bearer);
     if (error || !data?.user) {
       throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
     }
