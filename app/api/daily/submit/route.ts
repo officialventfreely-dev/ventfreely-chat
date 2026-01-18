@@ -1,10 +1,12 @@
-// FILE: app/api/daily/submit/route.ts
+// File: app/api/daily/submit/route.ts
 // FULL REPLACEMENT
 //
-// ✅ Fix: DB requires daily_reflections.score NOT NULL
-// - Always compute score from energy (Low=1, Okay=2, Good=3, Great=4)
-// - Service-role write (bypass RLS) + auth only to identify user
+// ✅ Production-correct Daily submit:
+// - Date comes from Postgres RPC: public.vent_today_tallinn() (Tallinn-local)
+// - Always sets score (handles NOT NULL score constraint)
+// - Service-role writes (bypass RLS) + auth only to identify user
 // - Insert-or-update (no dependency on updated_at / unique constraints)
+// - Better error diagnostics (stage + date + userId)
 
 import { NextRequest, NextResponse } from "next/server";
 import { getApiSupabase } from "@/lib/apiAuth";
@@ -24,17 +26,24 @@ function json(status: number, payload: any) {
   return NextResponse.json(payload, { status });
 }
 
-function ymdFromIso(iso: string) {
-  return iso.slice(0, 10);
-}
-
 function energyToScore(energyRaw: string) {
   const e = (energyRaw || "").trim().toLowerCase();
   if (e === "low") return 1;
   if (e === "okay") return 2;
   if (e === "good") return 3;
   if (e === "great") return 4;
-  return 2;
+  return 2; // safe default
+}
+
+async function getTallinnYmdFromPostgres(): Promise<string> {
+  // Use service-role to call RPC (always available, no RLS surprises)
+  const { data, error } = await supabaseService.rpc("vent_today_tallinn");
+  if (error) throw new Error(error.message);
+
+  // RPC returns date; Supabase may serialize as "YYYY-MM-DD" or ISO
+  const ymd = String(data ?? "").slice(0, 10);
+  if (!ymd || ymd.length !== 10) throw new Error("invalid_today_date");
+  return ymd;
 }
 
 export async function POST(req: NextRequest) {
@@ -53,9 +62,7 @@ export async function POST(req: NextRequest) {
     if (!emotion) return json(400, { error: "emotion required" });
     if (!energy) return json(400, { error: "energy required" });
 
-    const nowIso = new Date().toISOString();
-    const targetDate = ymdFromIso(nowIso);
-
+    const targetDate = await getTallinnYmdFromPostgres();
     const score = energyToScore(energy);
 
     // 1) Check if today's row exists
@@ -83,7 +90,7 @@ export async function POST(req: NextRequest) {
           positive_text: positiveText,
           emotion,
           energy,
-          score, // ✅ always set
+          score, // ✅ NOT NULL safe
         })
         .eq("id", existing.id);
 
@@ -106,7 +113,7 @@ export async function POST(req: NextRequest) {
       positive_text: positiveText,
       emotion,
       energy,
-      score, // ✅ NOT NULL
+      score, // ✅ NOT NULL safe
     });
 
     if (insErr) {
