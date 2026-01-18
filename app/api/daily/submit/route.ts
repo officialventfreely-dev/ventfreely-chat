@@ -1,17 +1,17 @@
-// File: app/api/daily/submit/route.ts
+// FILE: app/api/daily/submit/route.ts
 // FULL REPLACEMENT
 //
-// ✅ Daily save uses the SAME "today" as /daily/today and /daily/week:
-// - Tallinn date comes from Postgres (timezone('Europe/Tallinn', now())::date)
-// - Service-role writes (bypass RLS) + auth only to identify user
-// - No dependency on updated_at or unique constraints
-// - Better error diagnostics (stage + date + userId)
+// ✅ Fix: DB requires daily_reflections.score NOT NULL
+// - Always compute score from energy (Low=1, Okay=2, Good=3, Great=4)
+// - Service-role write (bypass RLS) + auth only to identify user
+// - Insert-or-update (no dependency on updated_at / unique constraints)
 
 import { NextRequest, NextResponse } from "next/server";
 import { getApiSupabase } from "@/lib/apiAuth";
 import { supabaseService } from "@/lib/supabaseService";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type Body = {
   positiveText?: string;
@@ -24,19 +24,22 @@ function json(status: number, payload: any) {
   return NextResponse.json(payload, { status });
 }
 
-async function getTallinnYmdFromPostgres(supabase: any) {
-  const { data, error } = await supabase.rpc("vent_today_tallinn");
-  if (error) throw new Error(error.message);
+function ymdFromIso(iso: string) {
+  return iso.slice(0, 10);
+}
 
-  const ymd = String(data ?? "").slice(0, 10);
-  if (!ymd || ymd.length !== 10) throw new Error("invalid_today_date");
-  return ymd;
+function energyToScore(energyRaw: string) {
+  const e = (energyRaw || "").trim().toLowerCase();
+  if (e === "low") return 1;
+  if (e === "okay") return 2;
+  if (e === "good") return 3;
+  if (e === "great") return 4;
+  return 2;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // identify user (bearer or cookie)
-    const { userId, supabase } = await getApiSupabase(req);
+    const { userId } = await getApiSupabase(req);
     if (!userId) return json(401, { error: "unauthorized" });
 
     const body = (await req.json().catch(() => ({}))) as Body;
@@ -50,8 +53,10 @@ export async function POST(req: NextRequest) {
     if (!emotion) return json(400, { error: "emotion required" });
     if (!energy) return json(400, { error: "energy required" });
 
-    // ✅ ONE source of truth: Tallinn "today" from Postgres
-    const targetDate = await getTallinnYmdFromPostgres(supabase);
+    const nowIso = new Date().toISOString();
+    const targetDate = ymdFromIso(nowIso);
+
+    const score = energyToScore(energy);
 
     // 1) Check if today's row exists
     const { data: existing, error: existErr } = await supabaseService
@@ -78,6 +83,7 @@ export async function POST(req: NextRequest) {
           positive_text: positiveText,
           emotion,
           energy,
+          score, // ✅ always set
         })
         .eq("id", existing.id);
 
@@ -100,6 +106,7 @@ export async function POST(req: NextRequest) {
       positive_text: positiveText,
       emotion,
       energy,
+      score, // ✅ NOT NULL
     });
 
     if (insErr) {
