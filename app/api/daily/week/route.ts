@@ -135,9 +135,10 @@ async function getPrev7Tallinn(supabase: any): Promise<string[]> {
 
 export async function GET(req: NextRequest) {
   try {
-    const { userId, supabase } = await getApiSupabase(req);
+    const auth = await getApiSupabase(req);
+    if (!auth) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-    if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const { userId, supabase } = auth;
 
     // keep for future re-enable, no UX effect now
     try {
@@ -218,8 +219,10 @@ export async function GET(req: NextRequest) {
         .map((r) => (typeof r.score === "number" && Number.isFinite(r.score) ? r.score : null))
         .filter((v): v is number => typeof v === "number");
 
-      const fallbackLast = last7Scores.length > 0 ? last7Scores : last7DoneRows.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
-      const fallbackPrev = prev7Scores.length > 0 ? prev7Scores : typedPrev.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
+      const fallbackLast =
+        last7Scores.length > 0 ? last7Scores : last7DoneRows.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
+      const fallbackPrev =
+        prev7Scores.length > 0 ? prev7Scores : typedPrev.map((r) => (r.emotion ? 1 : 0) + (r.energy ? 1 : 0));
 
       trend = computeTrendFromTwoWeeks(fallbackLast, fallbackPrev);
     } catch {

@@ -1,11 +1,11 @@
 // FILE: lib/apiAuth.ts
 // FULL REPLACEMENT
 //
-// ✅ Correct mobile + web auth handling (no false 401s)
-// - Mobile: extracts userId from Bearer JWT (sub) (no DB call, no getUser() race)
+// ✅ Correct mobile + web auth handling (NO throws that become 500)
+// - Mobile: extracts userId from Bearer JWT (sub) (no DB call)
 // - Creates a Supabase client that uses the Bearer token for RLS-safe reads
 // - Web: cookie-based supabaseServer() auth.getUser()
-// - Fixes Account "keeps asking login" + "Something didn't load"
+// - Returns `null` when unauthenticated (routes can return 401 cleanly)
 
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
@@ -31,14 +31,12 @@ export function getBearerToken(req: NextRequest): string | null {
 }
 
 function base64UrlToString(input: string) {
-  // base64url -> base64
   const b64 = input.replace(/-/g, "+").replace(/_/g, "/");
   const pad = b64.length % 4 ? "=".repeat(4 - (b64.length % 4)) : "";
   return Buffer.from(b64 + pad, "base64").toString("utf8");
 }
 
 function getUserIdFromJwt(bearer: string): string | null {
-  // JWT: header.payload.signature
   const parts = bearer.split(".");
   if (parts.length < 2) return null;
 
@@ -52,19 +50,19 @@ function getUserIdFromJwt(bearer: string): string | null {
   }
 }
 
-export async function getApiSupabase(req: NextRequest): Promise<{
+export type ApiAuthResult = {
   userId: string;
   user: User;
   supabase: SupabaseClient;
-}> {
+};
+
+export async function getApiSupabase(req: NextRequest): Promise<ApiAuthResult | null> {
   const bearer = getBearerToken(req);
 
   // ✅ Mobile app: Bearer token
   if (bearer) {
     const userId = getUserIdFromJwt(bearer);
-    if (!userId) {
-      throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-    }
+    if (!userId) return null;
 
     const supabase = createClient(getSupabaseUrl(), getAnonKey(), {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -82,9 +80,7 @@ export async function getApiSupabase(req: NextRequest): Promise<{
   const sb = await supabaseServer();
   const { data, error } = await sb.auth.getUser();
 
-  if (error || !data?.user) {
-    throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
-  }
+  if (error || !data?.user) return null;
 
   return { userId: data.user.id, user: data.user, supabase: sb };
 }
