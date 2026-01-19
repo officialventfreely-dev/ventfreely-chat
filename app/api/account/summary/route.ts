@@ -12,7 +12,10 @@ type UserMemoryRow = {
 };
 
 export async function GET(req: NextRequest) {
-  const { userId, supabase } = await getApiSupabase(req);
+ const auth = await getApiSupabase(req);
+if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const { userId, supabase } = auth;
+
 
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

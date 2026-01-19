@@ -45,7 +45,10 @@ async function getTallinnYmdFromPostgresAuthed(supabase: any) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, supabase } = await getApiSupabase(req);
+    const auth = await getApiSupabase(req);
+if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const { userId, supabase } = auth;
+
     if (!userId) return json(401, { error: "unauthorized" });
 
     const body = (await req.json().catch(() => ({}))) as Body;
